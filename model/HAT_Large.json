@@ -1,0 +1,10 @@
+{
+    "in_channels": 3,
+    "out_channels": 10,
+    "init_patch": 4,
+    "channels": [96, 128, 192, 256],
+    "heads": [4, 8, 12, 16],
+    "edges": [96, 128, 192, 256],
+    "depths": [4, 4, 8, 4]
+    
+}
