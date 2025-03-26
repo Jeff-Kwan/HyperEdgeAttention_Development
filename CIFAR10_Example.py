@@ -116,7 +116,7 @@ def main():
         metrics['test_accuracy'].append(test_acc)
 
         # Save the model
-        torch.save(model.state_dict(), 'output/CIFAR10_HAT.pth')
+        torch.save(model.state_dict(), 'output/CIFAR10_HAT.tar')
 
         # Save metrics
         with open('output/CIFAR10_metrics.json', 'w') as f:
