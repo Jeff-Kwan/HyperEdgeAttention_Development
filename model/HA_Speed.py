@@ -1,7 +1,8 @@
 import torch
 from torch import nn
+import json
 
-from HyperEdgeAttentionVer1 import HyperEdgeAttention
+from HAT import HAT_Classifier
 import time
 
 
@@ -56,13 +57,14 @@ def measure_performance(model, dummy_input, num_runs=100):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Create a dummy input tensor to measure inference time
-    dummy_input = torch.randn(1, 32, 224, 224).to(device)
+    dummy_input = torch.randn(8, 3, 224, 224).to(device)
 
     # Create an instance of the model
-    model = HyperEdgeAttention(32, 32, 4).to(device)
+    config = json.load(open('model/configs/HAT_Base.json'))
+    model = HAT_Classifier(config)
 
     # Measure the performance of the model
-    measure_performance(model, dummy_input, num_runs=100)
+    measure_performance(model, dummy_input, num_runs=1000)
 
     print("Now with compilation enabled:")
     model = torch.compile(model)
@@ -70,4 +72,4 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     torch.set_float32_matmul_precision('high')
 
-    measure_performance(model, dummy_input, num_runs=100)
+    measure_performance(model, dummy_input, num_runs=1000)
