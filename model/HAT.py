@@ -156,25 +156,26 @@ if __name__ == '__main__':
     # Example Image tensor
     B, C, H, W = 1, 3, 224, 224
     x = torch.randn(B, C, H, W, device=device)
-    y = torch.randn(B, 1, H, W, device=device)
-    loss = nn.MSELoss()
 
     # Example model
     model_params = {
-        'in_channels' : 3,
-        'out_channels' : 1,
-        'init_patch' : 4,
-        'channels' : [48, 64, 96, 128],
-        'heads' : [4, 4, 6, 8],
-        'edges' : [48, 64, 96, 128],
-        'depths' : [2, 2, 6, 2],
+        "in_channels": 3,
+        "out_channels": 1000,
+        "init_patch": 4,
+        "channels": [48, 64, 96, 128],
+        "heads": [4, 4, 6, 8],
+        "edges": [48, 64, 96, 128],
+        "depths": [4, 4, 4, 4]
     }
     HAT = HAT_Classifier(model_params).to(device)
     HAT.eval()
 
+    # Clear cache and reset memory stats
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(device)
+
     # Profile memory usage
-    torch.cuda.empty_cache() if torch.cuda.is_available() else None
-    torch.cuda.reset_peak_memory_stats(device) if torch.cuda.is_available() else None
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CPU, 
                     torch.profiler.ProfilerActivity.CUDA if torch.cuda.is_available() else None],
@@ -183,10 +184,12 @@ if __name__ == '__main__':
         with_flops=True,
     ) as prof:
         output = HAT(x)
-
+        loss = output.sum()
+        loss.backward()
 
     print(prof.key_averages().table(sort_by=f"{device}_time_total", row_limit=8))
-    print(f"Max VRAM usage: {torch.cuda.max_memory_allocated(device) / 1048**2:.2f} MB") if torch.cuda.is_available() else None
+    if torch.cuda.is_available():
+        print(f"Max VRAM usage: {torch.cuda.max_memory_allocated(device) / 1048**2:.2f} MB")
     print("Total trainable parameters:", round(sum(p.numel() for p in HAT.parameters() if p.requires_grad)/1e6, 2), 'M')
     print("IO is size:", x.element_size() * x.nelement() / 1048 / 1048, 'MB')
     print("I/O has elements: ", round(output.nelement() / 1e6, 2), 'M')

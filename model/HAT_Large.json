@@ -1,6 +1,6 @@
 {
     "in_channels": 3,
-    "out_channels": 10,
+    "out_channels": 1000,
     "init_patch": 4,
     "channels": [96, 128, 192, 256],
     "heads": [4, 8, 12, 16],
