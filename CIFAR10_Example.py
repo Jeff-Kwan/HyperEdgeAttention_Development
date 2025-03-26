@@ -17,7 +17,7 @@ from model import HAT_Classifier
 def train(model, device, train_loader, optimizer, criterion, epoch):
     model.train()
     train_loss = 0.0
-    pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training", leave=False)
+    pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for batch_idx, (data, target) in enumerate(pbar):
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         optimizer.zero_grad()
@@ -45,8 +45,7 @@ def test(model, device, test_loader, criterion):
     
     test_loss /= len(test_loader.dataset)
     accuracy = 100. * correct / len(test_loader.dataset)
-    print(f'\nTest set: Average loss: {test_loss:.4f} | Accuracy: {correct}/{len(test_loader.dataset)} ({accuracy:.0f}%)')
-    print(f'Number of model parameters is {sum(p.numel() for p in model.parameters())}')
+    print(f'Test set: Average loss: {test_loss:.4f} | Accuracy: {correct}/{len(test_loader.dataset)} ({accuracy:.0f}%)')
     return test_loss, accuracy
 
 def main():
@@ -58,7 +57,7 @@ def main():
     weight_decay = 1e-3
 
     enable_compile = True
-    cpu_workers = 4
+    cpu_workers = 8
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -85,11 +84,12 @@ def main():
                             pin_memory=True, num_workers=cpu_workers)
 
     # Initialize the model, loss function, and optimizer
-    config = json.load(open('model/HAT_CIFAR10.json'))
+    config = json.load(open('model/configs/HAT_CIFAR10.json'))
     model = HAT_Classifier(config).to(device)
+    print(f'Initialized model with {sum(p.numel() for p in model.parameters())/1e3} K parameters')
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     # Compilation Optimizations
     if enable_compile:
@@ -102,7 +102,8 @@ def main():
     metrics = {
         'train_loss': [],
         'test_loss': [],
-        'test_accuracy': []
+        'test_accuracy': [],
+        'model_size': sum(p.numel() for p in model.parameters())
     }
     for epoch in range(1, epochs + 1):
         train_loss = train(model, device, train_loader, optimizer, criterion, epoch)
