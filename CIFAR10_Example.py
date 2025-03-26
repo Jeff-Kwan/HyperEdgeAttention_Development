@@ -53,7 +53,7 @@ def main():
     # Hyperparameters
     epochs = 100
     batch_size = 128
-    learning_rate = 1e-4
+    learning_rate = 1e-3
     weight_decay = 1e-3
 
     enable_compile = True
