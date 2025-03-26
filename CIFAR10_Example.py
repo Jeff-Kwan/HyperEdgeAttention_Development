@@ -53,7 +53,7 @@ def main():
     # Hyperparameters
     epochs = 100
     batch_size = 128
-    learning_rate = 3e-4
+    learning_rate = 1e-4
     weight_decay = 1e-3
 
     enable_compile = True
@@ -63,6 +63,8 @@ def main():
 
     # CIFAR10 dataset transformation: Convert to tensor and normalize
     train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
         transforms.RandomAffine(degrees=180, translate=(0.1, 0.1), scale=(0.8, 1.2), shear=(-5, 5)),
         transforms.ColorJitter(brightness=0.3, contrast=0.2, saturation=0.1, hue=0.01),
         transforms.ToTensor(),
