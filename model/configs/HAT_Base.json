@@ -3,7 +3,7 @@
     "out_channels": 1000,
     "init_patch": 4,
     "channels": [48, 64, 96, 128],
-    "heads": [4, 4, 6, 8],
+    "heads": [4, 4, 4, 4],
     "edges": [48, 64, 96, 128],
     "depths": [4, 4, 4, 4]
     

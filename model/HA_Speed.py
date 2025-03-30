@@ -15,13 +15,16 @@ def measure_performance(model, dummy_input, num_runs=100):
     # Warm up GPU (if applicable) to prevent startup overhead
     if device.type == "cuda":
         for _ in range(10):
-            _ = model(dummy_input)
+            y = model(dummy_input)
+            loss = y.sum()
+            loss.backward()
         torch.cuda.synchronize()
 
     total_time = 0.0
 
     if device.type == "cuda":
         # Reset peak memory stats before timing
+        torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
 
         for _ in range(num_runs):
@@ -29,7 +32,9 @@ def measure_performance(model, dummy_input, num_runs=100):
             end_event = torch.cuda.Event(enable_timing=True)
 
             start_event.record()
-            _ = model(dummy_input)
+            y = model(dummy_input)
+            loss = y.sum()
+            loss.backward()
             end_event.record()
 
             torch.cuda.synchronize()  # Ensure events are recorded
@@ -57,19 +62,19 @@ def measure_performance(model, dummy_input, num_runs=100):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Create a dummy input tensor to measure inference time
-    dummy_input = torch.randn(8, 3, 224, 224).to(device)
+    dummy_input = torch.randn(128, 3, 256, 256).to(device)
 
     # Create an instance of the model
     config = json.load(open('model/configs/HAT_Base.json'))
     model = HAT_Classifier(config)
 
     # Measure the performance of the model
-    measure_performance(model, dummy_input, num_runs=1000)
+    # print("Base Speed")
+    # measure_performance(model, dummy_input, num_runs=100)
 
-    print("Now with compilation enabled:")
-    model = torch.compile(model)
+    print("\nNow with compilation enabled:")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
-    torch.set_float32_matmul_precision('high')
-
-    measure_performance(model, dummy_input, num_runs=1000)
+    torch.set_float32_matmul_precision('medium')
+    model = torch.compile(model)
+    measure_performance(model, dummy_input, num_runs=100)
