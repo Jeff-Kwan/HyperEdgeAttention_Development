@@ -138,8 +138,8 @@ def main():
     # Hyperparameters
     epochs = 100
     batch_size = 128
-    learning_rate = 1e-4
-    weight_decay = 1e-4
+    learning_rate = 1e-3
+    weight_decay = 1e-3
     enable_compile = True
     autocast = True
     cpu_workers = max(1, mp.cpu_count() - 1)
@@ -174,8 +174,10 @@ def main():
     # -----------------------------------------------------------------------------
     # Load the ImageNet1k dataset with streaming (Hugging Face datasets)
     # -----------------------------------------------------------------------------
-    train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', trust_remote_code=True, streaming=False)
-    val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', trust_remote_code=True, streaming=False)
+    train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', 
+        trust_remote_code=True, streaming=False, num_proc=cpu_workers)
+    val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', 
+        trust_remote_code=True, streaming=False, num_proc=cpu_workers)
     
     # Wrap the streaming datasets with our custom IterableDataset and proper transforms
     train_dataset = ImageNetStreamingDataset(train_dataset_raw, transform=train_transforms)
