@@ -75,28 +75,38 @@ val_transforms = transforms.Compose([
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch):
+def train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler=None):
     gc.collect()
     torch.cuda.empty_cache()
     model.train()
     total_loss = 0.0
-    total_samples = 0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
-        # Data is already transformed and on CPU; move to device
+        # Move data to device
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-        optimizer.step()
-        batch_size = data.size(0)
-        total_loss += loss.item() * batch_size
-        total_samples += batch_size
+
+        # Mixed precision forward pass
+        if autocast:
+            with torch.autocast('cuda'):
+                output = model(data)
+                loss = criterion(output, target)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            output = model(data)
+            loss = criterion(output, target)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+            loss.backward()
+            optimizer.step()
+
+        total_loss += loss.item()
         pbar.set_postfix(loss=loss.item())
 
-    return total_loss / total_samples if total_samples > 0 else float('inf')
+    return total_loss / len(train_loader)
 
 def validate_model(model, device, val_loader, criterion):
     model.eval()
@@ -106,8 +116,9 @@ def validate_model(model, device, val_loader, criterion):
     with torch.no_grad():
         for data, target in val_loader:
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-            output = model(data)
-            loss = criterion(output, target)
+            with torch.cuda.amp.autocast():
+                output = model(data)
+                loss = criterion(output, target)
             batch_size = data.size(0)
             total_loss += loss.item() * batch_size
             total_samples += batch_size
@@ -125,10 +136,11 @@ def validate_model(model, device, val_loader, criterion):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 128
+    batch_size = 256
     learning_rate = 1e-4
     weight_decay = 1e-4
     enable_compile = False
+    autocast = True  # Use autocast for mixed precision training
     cpu_workers = 4
 
     # Device configuration
@@ -158,9 +170,9 @@ def main():
     output_dir = os.path.join('Output', date_str, f'{timestamp}-HAT-ImageNet')
     os.makedirs(output_dir, exist_ok=True)
 
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
     # Load the ImageNet1k dataset with streaming (Hugging Face datasets)
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
     train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', trust_remote_code=True, streaming=True)
     val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', trust_remote_code=True, streaming=True)
     
@@ -178,6 +190,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scaler = torch.amp.GradScaler() if autocast else None
 
     # To store metrics across epochs
     metrics = {
@@ -189,7 +202,7 @@ def main():
 
     # Training loop
     for epoch in range(1, epochs + 1):
-        train_loss = train(model, device, train_loader, optimizer, criterion, epoch)
+        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler)
         val_loss, val_acc = validate_model(model, device, val_loader, criterion)
         scheduler.step()
 
