@@ -12,6 +12,7 @@ from torchvision import transforms  # using standard torchvision transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import gc
+import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -139,9 +140,9 @@ def main():
     batch_size = 256
     learning_rate = 1e-4
     weight_decay = 1e-4
-    enable_compile = False
-    autocast = True  # Use autocast for mixed precision training
-    cpu_workers = 4
+    enable_compile = True
+    autocast = False
+    cpu_workers = max(1, mp.cpu_count() - 1)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,7 +159,7 @@ def main():
 
     # Enable compilation optimizations if desired
     if enable_compile:
-        model = torch.compile(model, mode='max-autotune')
+        model = torch.compile(model)
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
         torch.set_float32_matmul_precision('high')
@@ -173,8 +174,8 @@ def main():
     # -----------------------------------------------------------------------------
     # Load the ImageNet1k dataset with streaming (Hugging Face datasets)
     # -----------------------------------------------------------------------------
-    train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', trust_remote_code=True, streaming=True)
-    val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', trust_remote_code=True, streaming=True)
+    train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', trust_remote_code=True, streaming=False)
+    val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', trust_remote_code=True, streaming=False)
     
     # Wrap the streaming datasets with our custom IterableDataset and proper transforms
     train_dataset = ImageNetStreamingDataset(train_dataset_raw, transform=train_transforms)
@@ -183,7 +184,7 @@ def main():
     # Create DataLoaders (use pin_memory for faster host-to-device transfers when using CUDA)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=cpu_workers,
                               collate_fn=train_dataset.collate_fn, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=1,
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=cpu_workers,
                             collate_fn=val_dataset.collate_fn, pin_memory=True)
 
     # Set up loss function, optimizer, and learning rate scheduler
