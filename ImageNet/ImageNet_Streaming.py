@@ -153,7 +153,7 @@ def main():
     now = datetime.now()
     timestamp = now.strftime("%H-%M")
     date_str = now.strftime("%Y-%m-%d")
-    output_dir = os.path.join('Output', date_str, f'{timestamp}-HAT-ImageNet')
+    output_dir = os.path.join('output', date_str, f'{timestamp}-HAT-ImageNet')
     os.makedirs(output_dir, exist_ok=True)
 
     # -----------------------------------------------------------------------------
