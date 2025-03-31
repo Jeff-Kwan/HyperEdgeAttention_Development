@@ -6,9 +6,9 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, IterableDataset
-from datasets import load_dataset  # for streaming dataset
-from torchvision import transforms  # using standard torchvision transforms
+from torch.utils.data import DataLoader, Dataset
+from datasets import load_dataset  # non-streaming map-style dataset
+from torchvision import transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import gc
@@ -19,42 +19,34 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from model import HAT_Classifier
 
 # -----------------------------------------------------------------------------
-# Custom IterableDataset for Streaming ImageNet1k
+# Custom Map-style Dataset for ImageNet1k (non-streaming)
 # -----------------------------------------------------------------------------
-class ImageNetStreamingDataset(IterableDataset):
+class ImageNetDataset(Dataset):
     def __init__(self, dataset, transform=None):
         """
         Args:
-            dataset: a streaming Hugging Face dataset (e.g., from load_dataset)
+            dataset: a Hugging Face map-style dataset (streaming=False)
             transform: a torchvision.transforms pipeline to apply on the PIL image
         """
         self.dataset = dataset
         self.transform = transform
 
-    def __iter__(self):
-        # Yield the raw PIL image and label; transforms are applied later
-        for sample in self.dataset:
-            yield sample['image'], sample['label']
+    def __len__(self):
+        return len(self.dataset)
 
-    def collate_fn(self, batch):
-        images, labels = zip(*batch)
-        processed_images = []
-        for img in images:
-            # Convert grayscale images to RGB if needed
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            if self.transform:
-                img = self.transform(img)
-            processed_images.append(img)
-        # Stack images and convert labels to tensor
-        images = torch.stack(processed_images)
-        labels = torch.tensor(labels, dtype=torch.long)
-        return images, labels
+    def __getitem__(self, idx):
+        sample = self.dataset[idx]
+        image, label = sample['image'], sample['label']
+        # Convert grayscale images to RGB if needed
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, label
 
 # -----------------------------------------------------------------------------
 # Define Transform Pipelines for Training and Validation
 # -----------------------------------------------------------------------------
-# For training: add common augmentations for ImageNet
 train_transforms = transforms.Compose([
     transforms.Resize(224),
     transforms.RandAugment(),
@@ -64,7 +56,6 @@ train_transforms = transforms.Compose([
                          std=[0.229, 0.224, 0.225]),
 ])
 
-# For validation: deterministic resize and center crop
 val_transforms = transforms.Compose([
     transforms.Resize(224),
     transforms.CenterCrop(224),
@@ -76,18 +67,15 @@ val_transforms = transforms.Compose([
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler=None):
+def train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler):
     gc.collect()
     torch.cuda.empty_cache()
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
-        # Move data to device
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         optimizer.zero_grad()
-
-        # Mixed precision forward pass
         if autocast:
             with torch.autocast('cuda'):
                 output = model(data)
@@ -151,7 +139,7 @@ def main():
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load the configuration for HAT_Classifier (adjust the path if needed)
+    # Load the configuration for HAT_Classifier (adjust path if needed)
     config_path = os.path.join('model', 'configs', 'HAT_Base.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -169,18 +157,18 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # -----------------------------------------------------------------------------
-    # Load the ImageNet1k dataset with streaming (Hugging Face datasets)
+    # Load the ImageNet1k dataset (non-streaming, map-style)
     # -----------------------------------------------------------------------------
     train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', 
         trust_remote_code=True, streaming=False, num_proc=cpu_workers)
     val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', 
         trust_remote_code=True, streaming=False, num_proc=cpu_workers)
     
-    # Wrap the streaming datasets with our custom IterableDataset and proper transforms
-    train_dataset = ImageNetStreamingDataset(train_dataset_raw, transform=train_transforms)
-    val_dataset = ImageNetStreamingDataset(val_dataset_raw, transform=val_transforms)
+    # Wrap the datasets with our custom Map-style Dataset and proper transforms
+    train_dataset = ImageNetDataset(train_dataset_raw, transform=train_transforms)
+    val_dataset = ImageNetDataset(val_dataset_raw, transform=val_transforms)
 
-    # Create DataLoaders (use pin_memory for faster host-to-device transfers when using CUDA)
+    # Create DataLoaders (using pin_memory for faster transfers when using CUDA)
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -204,14 +192,6 @@ def main():
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     scaler = torch.amp.GradScaler() if autocast else None
 
-    # To store metrics across epochs
-    metrics = {
-        'train_loss': [],
-        'val_loss': [],
-        'val_accuracy': [],
-        'model_size': total_params
-    }
-
     # Enable compilation optimizations
     if enable_compile:
         print("Compiling model...")
@@ -221,10 +201,18 @@ def main():
         matmul_precision = 'medium' if autocast else 'high'
         torch.set_float32_matmul_precision(matmul_precision)
 
+    # To store metrics across epochs
+    metrics = {
+        'train_loss': [],
+        'val_loss': [],
+        'val_accuracy': [],
+        'model_size': total_params
+    }
+
     # Training loop
     for epoch in range(1, epochs + 1):
         train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler)
-        val_loss, val_acc = validate_model(model, device, val_loader, criterion)
+        val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 
         metrics['train_loss'].append(train_loss)
@@ -232,7 +220,7 @@ def main():
         metrics['val_accuracy'].append(val_acc)
 
         # Save model checkpoint for this epoch
-        ckpt_path = os.path.join(output_dir, f'ImageNet_HATClassifer.tar')
+        ckpt_path = os.path.join(output_dir, f'ImageNet_HATClassifier.tar')
         torch.save(model.state_dict(), ckpt_path)
 
         # Save metrics to JSON
