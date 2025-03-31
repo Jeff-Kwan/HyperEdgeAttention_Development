@@ -164,7 +164,7 @@ def main():
         trust_remote_code=True, streaming=False, num_proc=cpu_workers,
         cache_dir=os.path.join('data', 'hf_cache'))
     val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', 
-        trust_remote_code=True, streaming=False, num_proc=cpu_workers
+        trust_remote_code=True, streaming=False, num_proc=cpu_workers,
         cache_dir=os.path.join('data', 'hf_cache'))
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
