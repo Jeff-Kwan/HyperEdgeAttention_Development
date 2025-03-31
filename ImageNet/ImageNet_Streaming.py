@@ -109,7 +109,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast, sc
 
     return total_loss / len(train_loader)
 
-def validate_model(model, device, val_loader, criterion):
+def validate_model(model, device, val_loader, criterion, autocast):
     model.eval()
     total_loss = 0.0
     total_samples = 0
@@ -117,7 +117,11 @@ def validate_model(model, device, val_loader, criterion):
     with torch.no_grad():
         for data, target in val_loader:
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-            with torch.cuda.amp.autocast():
+            if autocast:
+                with torch.autocast('cuda'):
+                    output = model(data)
+                    loss = criterion(output, target)
+            else:
                 output = model(data)
                 loss = criterion(output, target)
             batch_size = data.size(0)
