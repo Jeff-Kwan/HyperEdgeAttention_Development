@@ -137,11 +137,11 @@ def validate_model(model, device, val_loader, criterion):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 256
+    batch_size = 128
     learning_rate = 1e-4
     weight_decay = 1e-4
     enable_compile = True
-    autocast = False
+    autocast = True
     cpu_workers = max(1, mp.cpu_count() - 1)
 
     # Device configuration
@@ -182,10 +182,22 @@ def main():
     val_dataset = ImageNetStreamingDataset(val_dataset_raw, transform=val_transforms)
 
     # Create DataLoaders (use pin_memory for faster host-to-device transfers when using CUDA)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=cpu_workers,
-                              collate_fn=train_dataset.collate_fn, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=cpu_workers,
-                            collate_fn=val_dataset.collate_fn, pin_memory=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=cpu_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        num_workers=cpu_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
 
     # Set up loss function, optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss()
