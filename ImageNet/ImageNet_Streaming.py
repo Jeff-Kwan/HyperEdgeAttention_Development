@@ -123,8 +123,8 @@ def main():
     # Hyperparameters
     epochs = 100
     batch_size = 128
-    learning_rate = 1e-3
-    weight_decay = 1e-3
+    learning_rate = 1e-4
+    weight_decay = 1e-4
     enable_compile = True
     cpu_workers = 4
 
@@ -168,7 +168,7 @@ def main():
     # Create DataLoaders (use pin_memory for faster host-to-device transfers when using CUDA)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=cpu_workers,
                               collate_fn=train_dataset.collate_fn, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=cpu_workers,
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=1,
                             collate_fn=val_dataset.collate_fn, pin_memory=True)
 
     # Set up loss function, optimizer, and learning rate scheduler
