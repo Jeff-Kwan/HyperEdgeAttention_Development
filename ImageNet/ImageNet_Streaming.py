@@ -157,13 +157,6 @@ def main():
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'Initialized HAT - Size: {total_params/1e6:.2f} M')
 
-    # Enable compilation optimizations if desired
-    if enable_compile:
-        model = torch.compile(model)
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision('high')
-
     # Create an output directory with timestamp
     now = datetime.now()
     timestamp = now.strftime("%H-%M")
@@ -214,6 +207,15 @@ def main():
         'val_accuracy': [],
         'model_size': total_params
     }
+
+    # Enable compilation optimizations
+    if enable_compile:
+        print("Compiling model...")
+        model = torch.compile(model)
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+        matmul_precision = 'medium' if autocast else 'high'
+        torch.set_float32_matmul_precision(matmul_precision)
 
     # Training loop
     for epoch in range(1, epochs + 1):
