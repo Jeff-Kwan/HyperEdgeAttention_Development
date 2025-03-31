@@ -11,6 +11,7 @@ from datasets import load_dataset  # for streaming dataset
 from torchvision import transforms  # using standard torchvision transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import gc
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -75,6 +76,8 @@ val_transforms = transforms.Compose([
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
 def train(model, device, train_loader, optimizer, criterion, epoch):
+    gc.collect()
+    torch.cuda.empty_cache()
     model.train()
     total_loss = 0.0
     total_samples = 0
@@ -125,7 +128,7 @@ def main():
     batch_size = 128
     learning_rate = 1e-4
     weight_decay = 1e-4
-    enable_compile = True
+    enable_compile = False
     cpu_workers = 4
 
     # Device configuration
@@ -143,7 +146,7 @@ def main():
 
     # Enable compilation optimizations if desired
     if enable_compile:
-        model = torch.compile(model)
+        model = torch.compile(model, mode='max-autotune')
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
         torch.set_float32_matmul_precision('high')
