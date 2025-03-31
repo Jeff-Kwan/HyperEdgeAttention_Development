@@ -54,7 +54,7 @@ class ImageNetStreamingDataset(IterableDataset):
 # -----------------------------------------------------------------------------
 # For training: add common augmentations for ImageNet
 train_transforms = transforms.Compose([
-    transforms.Resize(256),
+    transforms.Resize(224),
     transforms.RandAugment(),
     transforms.CenterCrop(224),
     transforms.ToTensor(),
@@ -64,7 +64,7 @@ train_transforms = transforms.Compose([
 
 # For validation: deterministic resize and center crop
 val_transforms = transforms.Compose([
-    transforms.Resize(256),
+    transforms.Resize(224),
     transforms.CenterCrop(224),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
