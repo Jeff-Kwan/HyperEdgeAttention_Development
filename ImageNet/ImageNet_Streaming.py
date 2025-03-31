@@ -160,11 +160,14 @@ def main():
     # Load the ImageNet1k dataset (non-streaming, map-style)
     # -----------------------------------------------------------------------------
     os.makedirs(os.path.join('data', 'hf_cache'), exist_ok=True)
+    os.makedirs(os.path.join('data', 'imagenet'), exist_ok=True)
     train_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='train', 
         trust_remote_code=True, streaming=False, num_proc=cpu_workers,
+        data_dir=os.path.join('data', 'imagenet'),
         cache_dir=os.path.join('data', 'hf_cache'))
     val_dataset_raw = load_dataset('ILSVRC/imagenet-1k', split='validation', 
         trust_remote_code=True, streaming=False, num_proc=cpu_workers,
+        data_dir=os.path.join('data', 'imagenet'),
         cache_dir=os.path.join('data', 'hf_cache'))
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
