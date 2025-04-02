@@ -71,8 +71,8 @@ class Block(nn.Module):
         self.norm2 = RMSNormPermute(in_channels, dim=1, elementwise_affine=False)
     
     def forward(self, x):
-        x = x + self.HA(self.norm1(x))
-        x = x + self.CS(self.norm2(x))
+        x = self.norm1(x + self.HA(x))
+        x = self.norm2(x + self.CS(x))
         return x
     
 
@@ -96,9 +96,7 @@ class HAT_Encoder(nn.Module):
                 for _ in range(depths[i])])
             for i in range(layers)])
         self.downsample = nn.ModuleList([
-            nn.Sequential(
-                RMSNormPermute(channels[i], dim=1, elementwise_affine=False),
-                nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None))
+            nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None)
             for i in range(layers)])
         
         self.bottleneck = nn.Sequential(*[Block(channels[-1], edges[-1], heads[-1]) for _ in range(depths[-1])])
@@ -106,7 +104,7 @@ class HAT_Encoder(nn.Module):
         # Initizalizations
         nn.init.kaiming_uniform_(self.in_conv.weight, nonlinearity='linear')
         for d in self.downsample:
-            nn.init.kaiming_uniform_(d[1].weight, nonlinearity='linear')
+            nn.init.kaiming_uniform_(d.weight, nonlinearity='linear')
         
     def forward(self, x):
         # Patch Embedding
