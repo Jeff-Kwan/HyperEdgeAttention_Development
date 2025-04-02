@@ -124,11 +124,11 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 128
+    batch_size = 256
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
-    autocast = False
+    autocast = True
     matmul_precision = 'medium'
     cpu_workers = max(1, mp.cpu_count() - 1)
 
