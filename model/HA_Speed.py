@@ -66,7 +66,7 @@ def measure_performance(model, dummy_input, num_runs=100, autocast=False):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Create a dummy input tensor to measure inference time
-    dummy_input = torch.randn(64, 3, 256, 256).to(device)
+    dummy_input = torch.randn(128, 3, 256, 256).to(device)
 
     # Create an instance of the model
     config = json.load(open('model/configs/HAT_Base.json'))
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     # Measure the performance of the model
     print("Base Speed")
-    measure_performance(model, dummy_input, num_runs=100)
+    measure_performance(model, dummy_input, num_runs=20)
 
     print("\nNow with compilation enabled")
     torch.backends.cuda.enable_flash_sdp(False)
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.allow_tf32 = True
     torch.set_float32_matmul_precision('medium')
     model = torch.compile(model)
-    measure_performance(model, dummy_input, num_runs=100)
+    measure_performance(model, dummy_input, num_runs=20)
 
     # Clear everything and reinitialize the model
     del model
@@ -96,8 +96,8 @@ if __name__ == "__main__":
     torch.backends.cuda.enable_mem_efficient_sdp(False)
     torch.backends.cuda.enable_math_sdp(False)
     model = torch.compile(model)
-    measure_performance(model, dummy_input, num_runs=100, autocast=True)
+    measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
     print("\nNow with channels last memory as well")
     dummy_input = dummy_input.to(memory_format=torch.channels_last).contiguous()
-    measure_performance(model, dummy_input, num_runs=100, autocast=True)
+    measure_performance(model, dummy_input, num_runs=20, autocast=True)
