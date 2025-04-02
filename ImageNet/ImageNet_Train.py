@@ -55,7 +55,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        # data = data.to(memory_format=torch.channels_last).contiguous()
+        data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -82,7 +82,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
     with torch.no_grad():
         for data, target in val_loader:
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-            # data = data.to(memory_format=torch.channels_last).contiguous()
+            data = data.contiguous(memory_format=torch.channels_last)
             if autocast:
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     output = model(data)
