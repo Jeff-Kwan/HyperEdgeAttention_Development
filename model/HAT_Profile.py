@@ -2,6 +2,7 @@ import torch
 import time
 import json
 from torchvision import transforms, datasets
+from multiprocessing import cpu_count
 from HAT import HAT_Classifier
 
 def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=False):
@@ -70,7 +71,8 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
         # Optimizer Step Timing
         start_opt = torch.cuda.Event(enable_timing=True)
         end_opt = torch.cuda.Event(enable_timing=True)
-        start_opt.record()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.zero_grad(set_to_none=True)
         optimizer.step()
         end_opt.record()
         torch.cuda.synchronize(device)
@@ -103,6 +105,7 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
             outputs = model(inputs)
             loss = criterion(outputs, targets)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
     end_gpu.record()
@@ -133,11 +136,11 @@ if __name__ == "__main__":
     device = torch.device("cuda")
     batch_size = 128
     num_iters = 20
-    cpu_workers = 20
+    cpu_workers = min(max(1, cpu_count() - 1), 64)
 
     train_transforms = transforms.Compose([
         transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
+        transforms.RandAugment(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])

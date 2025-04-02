@@ -65,7 +65,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
             output = model(data)
             loss = criterion(output, target)
         loss.backward()
-        norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+        norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss.item()
