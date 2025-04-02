@@ -3,8 +3,9 @@ HyperEdge Attention Transformer (HAT??) - PyTorch
 '''
 import torch
 from torch import nn
+from torch.nn import functional as F
 
-from .HyperEdgeAttentionVer2 import HyperEdgeAttention
+from HyperEdgeAttentionVer2 import HyperEdgeAttention
 
 
 class RMSNormPermute(nn.Module):
@@ -71,9 +72,27 @@ class Block(nn.Module):
         self.norm2 = RMSNormPermute(in_channels, dim=1, elementwise_affine=False)
     
     def forward(self, x):
-        x = self.norm1(x + self.HA(x))
-        x = self.norm2(x + self.CS(x))
+        x = x + self.HA(self.norm1(x))
+        x = x + self.CS(self.norm2(x))
         return x
+    
+class PredictionHead(nn.Module):
+    '''Prediction Head via Attention Aggregation first'''
+    def __init__(self, in_channels, classes):
+        super(PredictionHead, self).__init__()
+        self.class_Q = nn.Parameter(torch.randn(classes, in_channels))
+        self.K = nn.Linear(in_channels, in_channels, bias=False)
+        self.head = nn.Sequential(
+            nn.RMSNorm(in_channels, elementwise_affine=False),
+            nn.Linear(in_channels, classes, bias=False))
+        nn.init.kaiming_uniform_(self.K.weight, nonlinearity='linear')
+        nn.init.kaiming_uniform_(self.head[1].weight, nonlinearity='linear')
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
+        z = F.scaled_dot_product_attention(self.class_Q, self.K(x), x)
+        return self.head(z)
     
 
 class HAT_Encoder(nn.Module):
@@ -95,8 +114,9 @@ class HAT_Encoder(nn.Module):
                 Block(channels[i], edges[i], heads[i])
                 for _ in range(depths[i])])
             for i in range(layers)])
-        self.downsample = nn.ModuleList([
-            nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None)
+        self.downsample = nn.ModuleList([nn.Sequential(
+            RMSNormPermute(channels[i], dim=1, elementwise_affine=False),
+            nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None))
             for i in range(layers)])
         
         self.bottleneck = nn.Sequential(*[Block(channels[-1], edges[-1], heads[-1]) for _ in range(depths[-1])])
@@ -104,7 +124,7 @@ class HAT_Encoder(nn.Module):
         # Initizalizations
         nn.init.kaiming_uniform_(self.in_conv.weight, nonlinearity='linear')
         for d in self.downsample:
-            nn.init.kaiming_uniform_(d.weight, nonlinearity='linear')
+            nn.init.kaiming_uniform_(d[1].weight, nonlinearity='linear')
         
     def forward(self, x):
         # Patch Embedding
@@ -146,6 +166,7 @@ class HAT_Classifier(nn.Module):
             nn.RMSNorm(channels[-1], elementwise_affine=False),
             nn.Linear(channels[-1], out_channels, bias=False)
         )
+        # self.out = PredictionHead(channels[-1], out_channels)
         
     def encode(self, x):
         x = self.encoder(x)
