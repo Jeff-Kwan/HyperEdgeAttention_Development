@@ -73,17 +73,20 @@ if __name__ == "__main__":
     model = HAT_Classifier(config)
 
     # Measure the performance of the model
-    print("Base Speed")
+    print("Base Speed, no flash attention")
+    torch.backends.cuda.enable_flash_sdp(False)
     measure_performance(model, dummy_input, num_runs=20)
 
     print("\nNow with compilation enabled")
-    torch.backends.cuda.enable_flash_sdp(False)
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.allow_tf32 = True
     torch.set_float32_matmul_precision('medium')
     model = torch.compile(model)
     measure_performance(model, dummy_input, num_runs=20)
+
+    print("\nNow with autocast enabled")
+    measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
     # Clear everything and reinitialize the model
     del model
