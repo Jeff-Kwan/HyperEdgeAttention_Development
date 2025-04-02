@@ -92,10 +92,6 @@ if __name__ == "__main__":
     model = HAT_Classifier(config).to(device)
 
     print("\nNow with flash attention and autocast")
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.allow_tf32 = True
-    torch.set_float32_matmul_precision('medium')
     torch.backends.cuda.enable_flash_sdp(True)
     torch.backends.cuda.enable_mem_efficient_sdp(False)
     torch.backends.cuda.enable_math_sdp(False)
@@ -103,5 +99,5 @@ if __name__ == "__main__":
     measure_performance(model, dummy_input, num_runs=100, autocast=True)
 
     print("\nNow with channels last memory as well")
-    dummy_input = dummy_input.contiguous(memory_format=torch.channels_last)
+    dummy_input = dummy_input.to(memory_format=torch.channels_last).contiguous()
     measure_performance(model, dummy_input, num_runs=100, autocast=True)
