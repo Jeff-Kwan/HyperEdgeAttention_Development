@@ -85,7 +85,6 @@ def main():
     enable_compile = True
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
-    flash = True
     cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
@@ -172,12 +171,7 @@ def main():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        model = torch.compile(model, mode='max-autotune')
-        if flash:
-            assert autocast, "Flash Attention requires autocasting to bfloat16"
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_mem_efficient_sdp(False)
-            torch.backends.cuda.enable_math_sdp(False)
+        model = torch.compile(model)
 
     # To store metrics across epochs
     metrics = {
