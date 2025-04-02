@@ -5,7 +5,8 @@ from torchvision import transforms, datasets
 from multiprocessing import cpu_count
 from HAT import HAT_Classifier
 
-def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=False):
+def profile_training_run(model, optimizer, criterion, data_loader, 
+                         use_autocast=False, channels_last=False):
     num_iters = len(data_loader)
     device = next(model.parameters()).device
     model.train()
@@ -13,6 +14,8 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
     # --- Warm-up Phase ---
     for i, (inputs, targets) in enumerate(data_loader):
         inputs, targets = inputs.to(device), targets.to(device)
+        if channels_last:
+            inputs = inputs.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad()
         if use_autocast:
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
@@ -45,6 +48,8 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
         # Data Loading (CPU timing)
         data_start = time.perf_counter()
         inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+        if channels_last:
+            inputs = inputs.contiguous(memory_format=torch.channels_last)
         data_end = time.perf_counter()
         data_loading_time = (data_end - data_start) * 1000.0  # ms
 
@@ -166,7 +171,6 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
 
     print("Baseline Training")
-    torch.backends.cuda.enable_flash_sdp(False)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Compilation")
@@ -180,15 +184,5 @@ if __name__ == "__main__":
     print("\nWith Autocast")
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
 
-    print("\nWith Flash Attention")
-    del model
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats(device)
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(False)
-    torch.backends.cuda.enable_math_sdp(False)
-    model = HAT_Classifier(config).to(device)
-    model = torch.compile(model)
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
-    
-    exit()
+    print("\nChannels Last Memory Format")
+    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
