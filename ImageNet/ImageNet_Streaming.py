@@ -55,7 +55,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        data = data.to(memory_format=torch.channels_last)
+        # data = data.to(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -82,7 +82,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
     with torch.no_grad():
         for data, target in val_loader:
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-            data = data.to(memory_format=torch.channels_last)
+            # data = data.to(memory_format=torch.channels_last)
             if autocast:
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     output = model(data)
@@ -107,12 +107,13 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 256
+    batch_size = 128
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
+    flash = True
     cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
@@ -197,11 +198,16 @@ def main():
     # Enable compilation optimizations
     if enable_compile:
         print("Compiling model...")
-        model = torch.compile(model, mode='max-autotune')
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
+        model = torch.compile(model)
+        if flash:
+            assert autocast, "Flash Attention requires autocasting to bfloat16"
+            torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_mem_efficient_sdp(False)
+            torch.backends.cuda.enable_math_sdp(False)
 
     # To store metrics across epochs
     metrics = {
