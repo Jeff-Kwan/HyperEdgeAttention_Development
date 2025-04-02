@@ -130,7 +130,7 @@ def main():
     enable_compile = True
     autocast = True
     matmul_precision = 'medium'
-    cpu_workers = max(1, mp.cpu_count() - 1)
+    cpu_workers = min(max(1, mp.cpu_count() - 1), 32)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -177,7 +177,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -185,7 +185,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
