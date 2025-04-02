@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-from datasets import load_dataset  # non-streaming map-style dataset
+from datasets import load_dataset
 from torchvision import transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -44,7 +44,7 @@ class ImageNetDataset(Dataset):
             image = image.convert('RGB')
         if self.transform:
             image = self.transform(image)
-        return image.to(self.device, non_blocking=True), label.to(self.device, non_blocking=True)
+        return image, label
     
 
 # -----------------------------------------------------------------------------
@@ -57,8 +57,9 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
-        # data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        optimizer.zero_grad()
+        data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        data = data.to(memory_format=torch.channels_last)
+        optimizer.zero_grad(set_to_none=True)
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 output = model(data)
@@ -83,7 +84,8 @@ def validate_model(model, device, val_loader, criterion, autocast):
     correct = 0
     with torch.no_grad():
         for data, target in val_loader:
-            # data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
+            data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
+            data = data.to(memory_format=torch.channels_last)
             if autocast:
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     output = model(data)
@@ -190,7 +192,7 @@ def main():
         train_dataset,
         batch_size=batch_size,
         num_workers=cpu_workers,
-        pin_memory=False,
+        pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,
     )
@@ -198,7 +200,7 @@ def main():
         val_dataset,
         batch_size=batch_size,
         num_workers=cpu_workers,
-        pin_memory=False,
+        pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,
     )
