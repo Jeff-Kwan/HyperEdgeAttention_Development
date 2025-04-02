@@ -115,20 +115,17 @@ def main():
 
     # Define Transform Pipelines for Training and Validation
     train_transforms = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        # transforms.RandAugment(),
+        transforms.RandomResizedCrop(32),
+        transforms.RandAugment(),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                             std=[0.5, 0.5, 0.5])
     ])
 
     val_transforms = transforms.Compose([
-        transforms.Resize(224),
-        transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                             std=[0.5, 0.5, 0.5])
     ])
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
