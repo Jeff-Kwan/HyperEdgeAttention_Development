@@ -61,8 +61,8 @@ class Block(nn.Module):
         self.norm2 = RMSNormPermute(in_channels, dim=1, elementwise_affine=False)
     
     def forward(self, x):
-        x = self.norm1(x + self.HA(x))
-        x = self.norm2(x + self.CS(x))
+        x = x + self.HA(self.norm1(x))
+        x = x + self.CS(self.norm2(x))
         return x
     
 
@@ -86,7 +86,9 @@ class HAT_Encoder(nn.Module):
                 for _ in range(depths[i])])
             for i in range(layers)])
         self.downsample = nn.ModuleList([
-            nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None)
+            nn.Sequential(
+                nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None),
+                RMSNormPermute(channels[i+1], dim=1, elementwise_affine=False))
             for i in range(layers)])
         
         self.bottleneck = nn.Sequential(*[Block(channels[-1], edges[-1], heads[-1]) for _ in range(depths[-1])])

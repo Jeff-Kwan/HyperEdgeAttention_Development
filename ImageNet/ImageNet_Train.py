@@ -114,7 +114,7 @@ def main():
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     flash = True
-    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = 16#min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -179,7 +179,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=3,
+        prefetch_factor=4,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -187,7 +187,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=3,
+        prefetch_factor=4,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
@@ -203,6 +203,7 @@ def main():
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
         model = torch.compile(model)
+        criterion = torch.compile(criterion)
         if flash:
             assert autocast, "Flash Attention requires autocasting to bfloat16"
             torch.backends.cuda.enable_flash_sdp(True)
