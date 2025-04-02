@@ -76,21 +76,21 @@ class Block(nn.Module):
         x = x + self.CS(self.norm2(x))
         return x
     
-class PredictionHead(nn.Module):
-    '''Prediction Head via Attention Aggregation first'''
-    def __init__(self, in_channels, classes):
-        super(PredictionHead, self).__init__()
-        self.Q = nn.Parameter(torch.randn(classes, in_channels))
-        self.class_vec = nn.Parameter(self.Q.data / in_channels**0.5)
-        self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
+# class PredictionHead(nn.Module):
+#     '''Prediction Head via Attention Aggregation first'''
+#     def __init__(self, in_channels, classes):
+#         super(PredictionHead, self).__init__()
+#         self.Q = nn.Parameter(torch.randn(classes, in_channels))
+#         self.class_vec = nn.Parameter(self.Q.data / in_channels**0.5)
+#         self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
 
-    def forward(self, x):
-        B, C, H, W = x.shape
-        x = self.norm(x.permute(0, 2, 3, 1).reshape(B, H*W, C))
-        # SDA Weighted x for each class
-        x = F.scaled_dot_product_attention(self.Q, x, x)
-        # Inner Product
-        return torch.sum(x * self.class_vec, dim=-1)
+#     def forward(self, x):
+#         B, C, H, W = x.shape
+#         x = self.norm(x.permute(0, 2, 3, 1).reshape(B, H*W, C))
+#         # SDA Weighted x for each class
+#         x = F.scaled_dot_product_attention(self.Q, x, x)
+#         # Inner Product
+#         return torch.sum(x * self.class_vec, dim=-1)
     
 
 class HAT_Encoder(nn.Module):
@@ -158,13 +158,12 @@ class HAT_Classifier(nn.Module):
         self.encoder = HAT_Encoder(model_params)
 
         # Classifier Prediction head
-        # self.out = nn.Sequential(
-        #     nn.AdaptiveAvgPool2d(1),
-        #     nn.Flatten(),
-        #     nn.RMSNorm(channels[-1], elementwise_affine=False),
-        #     nn.Linear(channels[-1], out_channels, bias=False)
-        # )
-        self.out = PredictionHead(channels[-1], out_channels)
+        self.out = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.RMSNorm(channels[-1], elementwise_affine=False),
+            nn.Linear(channels[-1], out_channels, bias=False))
+        # self.out = PredictionHead(channels[-1], out_channels)
         
     def encode(self, x):
         x = self.encoder(x)
