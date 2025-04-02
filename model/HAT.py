@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .HyperEdgeAttentionVer2 import HyperEdgeAttention
+from HyperEdgeAttentionVer2 import HyperEdgeAttention
 
 
 class RMSNormPermute(nn.Module):
@@ -81,18 +81,15 @@ class PredictionHead(nn.Module):
     def __init__(self, in_channels, classes):
         super(PredictionHead, self).__init__()
         self.class_Q = nn.Parameter(torch.randn(classes, in_channels))
-        self.K = nn.Linear(in_channels, in_channels, bias=False)
-        self.head = nn.Sequential(
-            nn.RMSNorm(in_channels, elementwise_affine=False),
-            nn.Linear(in_channels, classes, bias=False))
-        nn.init.kaiming_uniform_(self.K.weight, nonlinearity='linear')
-        nn.init.kaiming_uniform_(self.head[1].weight, nonlinearity='linear')
+        self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
 
     def forward(self, x):
         B, C, H, W = x.shape
         x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
-        z = F.scaled_dot_product_attention(self.class_Q, self.K(x), x)
-        return self.head(z)
+        # SDA Weighted x for each class
+        x = F.scaled_dot_product_attention(self.class_Q, x, x)
+        # Inner Product
+        return torch.sum(x * self.class_Q, dim=-1)
     
 
 class HAT_Encoder(nn.Module):
