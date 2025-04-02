@@ -97,7 +97,7 @@ class HAT_Encoder(nn.Module):
             for i in range(layers)])
         self.downsample = nn.ModuleList([
             nn.Sequential(
-                RMSNormPermute(channels[i+1], dim=1, elementwise_affine=False),
+                RMSNormPermute(channels[i], dim=1, elementwise_affine=False),
                 nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None))
             for i in range(layers)])
         
