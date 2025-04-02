@@ -183,22 +183,22 @@ if __name__ == "__main__":
     # profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, MATH Attention")
-    with sdpa_kernel([SDPBackend.MATH]):
+    with sdpa_kernel(SDPBackend.MATH):
         compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, EFFICIENT Attention")
-    with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+    with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
         compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, CUDNN Attention")
-    with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+    with sdpa_kernel(SDPBackend.CUDNN_ATTENTION):
         compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, FLASH Attention")
-    with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
+    with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
         compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
