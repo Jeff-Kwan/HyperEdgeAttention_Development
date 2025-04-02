@@ -114,7 +114,7 @@ def main():
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     flash = True
-    cpu_workers = 16#min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

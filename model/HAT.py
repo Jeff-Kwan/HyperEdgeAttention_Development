@@ -4,7 +4,7 @@ HyperEdge Attention Transformer (HAT??) - PyTorch
 import torch
 from torch import nn
 
-from .HyperEdgeAttentionVer2 import HyperEdgeAttention
+from HyperEdgeAttentionVer2 import HyperEdgeAttention
 
 
 class RMSNormPermute(nn.Module):
