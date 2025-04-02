@@ -82,14 +82,15 @@ class PredictionHead(nn.Module):
         super(PredictionHead, self).__init__()
         self.class_Q = nn.Parameter(torch.randn(classes, in_channels))
         self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
+        self.sqrt_dk = in_channels**0.5
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
+        x = self.norm(x.permute(0, 2, 3, 1).reshape(B, H*W, C))
         # SDA Weighted x for each class
         x = F.scaled_dot_product_attention(self.class_Q, x, x)
         # Inner Product
-        return torch.sum(x * self.class_Q, dim=-1)
+        return torch.sum(x * self.class_Q / self.sqrt_dk, dim=-1)
     
 
 class HAT_Encoder(nn.Module):
