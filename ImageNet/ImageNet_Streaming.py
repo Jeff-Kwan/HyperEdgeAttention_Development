@@ -18,17 +18,19 @@ import multiprocessing as mp
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from model import HAT_Classifier
 
+
 # -----------------------------------------------------------------------------
 # Custom Map-style Dataset for ImageNet1k (non-streaming)
 # -----------------------------------------------------------------------------
 class ImageNetDataset(Dataset):
-    def __init__(self, dataset, transform=None):
+    def __init__(self, dataset, device, transform=None):
         """
         Args:
             dataset: a Hugging Face map-style dataset (streaming=False)
             transform: a torchvision.transforms pipeline to apply on the PIL image
         """
         self.dataset = dataset
+        self.device = device
         self.transform = transform
 
     def __len__(self):
@@ -42,27 +44,8 @@ class ImageNetDataset(Dataset):
             image = image.convert('RGB')
         if self.transform:
             image = self.transform(image)
-        return image, label
-
-# -----------------------------------------------------------------------------
-# Define Transform Pipelines for Training and Validation
-# -----------------------------------------------------------------------------
-train_transforms = transforms.Compose([
-    transforms.Resize(224),
-    transforms.RandAugment(),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225]),
-])
-
-val_transforms = transforms.Compose([
-    transforms.Resize(224),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225]),
-])
+        return image.to(self.device, non_blocking=True), label.to(self.device, non_blocking=True)
+    
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -74,7 +57,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
-        data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        # data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         optimizer.zero_grad()
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -92,6 +75,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
 
     return total_loss / len(train_loader)
 
+
 def validate_model(model, device, val_loader, criterion, autocast):
     model.eval()
     total_loss = 0.0
@@ -99,7 +83,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
     correct = 0
     with torch.no_grad():
         for data, target in val_loader:
-            data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
+            # data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
             if autocast:
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     output = model(data)
@@ -129,8 +113,8 @@ def main():
     weight_decay = 1e-3
     enable_compile = True
     autocast = True
-    matmul_precision = 'medium'
-    cpu_workers = min(max(1, mp.cpu_count() - 1), 32)
+    matmul_precision = 'medium' if autocast else 'high'
+    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,16 +150,47 @@ def main():
         data_dir=os.path.join('data', 'imagenet'),
         cache_dir=os.path.join('data', 'hf_cache'))
     
+    # Define Transform Pipelines for Training and Validation
+    train_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandAugment(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+    ])
+
+    val_transforms = transforms.Compose([
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+    ])
+
+        # Enable compilation optimizations
+    if enable_compile:
+        print("Compiling model...")
+        model = torch.compile(model)
+        train_transforms = torch.compile(train_transforms)
+        val_transforms = torch.compile(val_transforms)
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.set_float32_matmul_precision(matmul_precision)
+        if matmul_precision == 'medium':
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
+            torch.backends.cuda.allow_fp16_bf16_reduction_math_sdp(True)
+    
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
-    train_dataset = ImageNetDataset(train_dataset_raw, transform=train_transforms)
-    val_dataset = ImageNetDataset(val_dataset_raw, transform=val_transforms)
+    train_dataset = ImageNetDataset(train_dataset_raw, device, transform=train_transforms)
+    val_dataset = ImageNetDataset(val_dataset_raw, device, transform=val_transforms)
 
     # Create DataLoaders (using pin_memory for faster transfers when using CUDA)
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         num_workers=cpu_workers,
-        pin_memory=True,
+        pin_memory=False,
         persistent_workers=True,
         prefetch_factor=2,
     )
@@ -183,7 +198,7 @@ def main():
         val_dataset,
         batch_size=batch_size,
         num_workers=cpu_workers,
-        pin_memory=True,
+        pin_memory=False,
         persistent_workers=True,
         prefetch_factor=2,
     )
@@ -192,14 +207,6 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-    # Enable compilation optimizations
-    if enable_compile:
-        print("Compiling model...")
-        model = torch.compile(model)
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision(matmul_precision)
 
     # To store metrics across epochs
     metrics = {
