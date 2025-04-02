@@ -144,7 +144,7 @@ def profile_training_run(model, optimizer, criterion, data_loader,
 if __name__ == "__main__":
     device = torch.device("cuda")
     batch_size = 128
-    num_iters = 50
+    num_iters = 20
     cpu_workers = min(max(1, cpu_count() - 1), 64)
 
     train_transforms = transforms.Compose([
@@ -202,5 +202,7 @@ if __name__ == "__main__":
         compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
-    print("\nWith Autocast, auto-select Attention")
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
+    print("\nChannels Last Memory (Flash)")
+    with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        compiled_model = torch.compile(model, mode='reduce-overhead')
+        profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
