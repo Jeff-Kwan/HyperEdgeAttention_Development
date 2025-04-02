@@ -3,6 +3,7 @@ import time
 import json
 from torchvision import transforms, datasets
 from multiprocessing import cpu_count
+from torch.nn.attention import sdpa_kernel, SDPBackend
 from HAT import HAT_Classifier
 
 def profile_training_run(model, optimizer, criterion, data_loader, 
@@ -181,8 +182,22 @@ if __name__ == "__main__":
     model = torch.compile(model)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
-    print("\nWith Autocast")
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+    print("\nWith Autocast, MATH Attention")
+    with sdpa_kernel([SDPBackend.MATH]):
+        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
 
-    print("\nChannels Last Memory Format")
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
+    print("\nWith Autocast, EFFICIENT Attention")
+    with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+
+    print("\nWith Autocast, CUDNN Attention")
+    with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+
+    print("\nWith Autocast, FLASH Attention")
+    with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
+        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+
+    print("\nChannels Last Memory Format (Flash)")
+    with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
+        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)

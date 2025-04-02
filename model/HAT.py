@@ -16,23 +16,23 @@ class RMSNormPermute(nn.Module):
         """
         super(RMSNormPermute, self).__init__()
         self.dim = dim
-        # self.norm = nn.RMSNorm(num_features, eps, elementwise_affine, device, dtype)
-        self.dk = num_features**0.5
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-        if elementwise_affine:
-            self.weight = nn.Parameter(torch.ones(num_features, device=device, dtype=dtype))
+        self.norm = nn.RMSNorm(num_features, eps, elementwise_affine, device, dtype)
+        # self.dk = num_features**0.5
+        # self.eps = eps
+        # self.elementwise_affine = elementwise_affine
+        # if elementwise_affine:
+        #     self.weight = nn.Parameter(torch.ones(num_features, device=device, dtype=dtype))
 
     def forward(self, x):
-        # dim = self.dim if self.dim >= 0 else x.dim() + self.dim
-        # permute_order = [i for i in range(x.dim()) if i != dim] + [dim]
-        # reverse_order = [permute_order.index(i) for i in range(x.dim())]
-        # x = self.norm(x.permute(*permute_order)).permute(*reverse_order)
-        x = nn.functional.normalize(x, p=2, dim=self.dim, eps=self.eps) * self.dk
-        if self.elementwise_affine:
-            shape = [1] * x.ndim
-            shape[self.dim] = -1
-            x = x * self.weight.view(*shape)
+        dim = self.dim if self.dim >= 0 else x.dim() + self.dim
+        permute_order = [i for i in range(x.dim()) if i != dim] + [dim]
+        reverse_order = [permute_order.index(i) for i in range(x.dim())]
+        x = self.norm(x.permute(*permute_order)).permute(*reverse_order)
+        # x = nn.functional.normalize(x, p=2, dim=self.dim, eps=self.eps) * self.dk
+        # if self.elementwise_affine:
+        #     shape = [1] * x.ndim
+        #     shape[self.dim] = -1
+        #     x = x * self.weight.view(*shape)
         return x
 
 
