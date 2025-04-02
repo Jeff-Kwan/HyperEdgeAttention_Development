@@ -171,32 +171,36 @@ if __name__ == "__main__":
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
 
-    print("Baseline Training")
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
+    # print("Baseline Training")
+    # profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
-    print("\nWith Compilation")
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-    torch.backends.cudnn.allow_tf32 = True
-    torch.set_float32_matmul_precision('medium')
-    model = torch.compile(model)
-    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
+    # print("\nWith Compilation")
+    # torch.backends.cudnn.enabled = True
+    # torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.allow_tf32 = True
+    # torch.set_float32_matmul_precision('medium')
+    # compiled_model = torch.compile(model)
+    # profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, MATH Attention")
     with sdpa_kernel([SDPBackend.MATH]):
-        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+        compiled_model = torch.compile(model)
+        profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, EFFICIENT Attention")
     with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
-        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+        compiled_model = torch.compile(model)
+        profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, CUDNN Attention")
     with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
-        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+        compiled_model = torch.compile(model)
+        profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast, FLASH Attention")
     with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
-        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+        compiled_model = torch.compile(model)
+        profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nChannels Last Memory")
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
