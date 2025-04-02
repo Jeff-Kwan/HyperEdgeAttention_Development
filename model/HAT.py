@@ -158,15 +158,8 @@ if __name__ == '__main__':
     x = torch.randn(B, C, H, W, device=device)
 
     # Example model
-    model_params = {
-        "in_channels": 3,
-        "out_channels": 1000,
-        "init_patch": 4,
-        "channels": [48, 64, 96, 128],
-        "heads": [4, 4, 6, 8],
-        "edges": [48, 64, 96, 128],
-        "depths": [4, 4, 4, 4]
-    }
+    import json
+    model_params = json.load(open('model/configs/HAT_Base.json'))
     HAT = HAT_Classifier(model_params).to(device)
     HAT.eval()
 

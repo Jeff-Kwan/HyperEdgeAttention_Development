@@ -133,7 +133,8 @@ def main():
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
-    autocast = True
+    autocast = False
+    matmul_precision = 'medium'
     cpu_workers = max(1, mp.cpu_count() - 1)
 
     # Device configuration
@@ -204,7 +205,6 @@ def main():
         model = torch.compile(model)
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
-        matmul_precision = 'medium' if autocast else 'high'
         torch.set_float32_matmul_precision(matmul_precision)
 
     # To store metrics across epochs
