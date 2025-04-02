@@ -124,7 +124,7 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
     print(f"Average Optimizer Step Time: {avg_optim:.2f} ms")
     print(f"Average CPU Iter Time: {avg_cpu_iter:.2f} ms")
     print(f"Average GPU Iter Time: {avg_gpu_iter:.2f} ms")
-    print(f"Unaccounted Time: {unaccounted_time:.2f} ms")
+    print(f"Unaccounted Iter Time: {unaccounted_time:.2f} ms")
     print(f"Peak VRAM Usage: {peak_vram:.2f} MB")
 
     return avg_data_loading, avg_forward, avg_backward, avg_optim, peak_vram
@@ -132,8 +132,8 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
 if __name__ == "__main__":
     device = torch.device("cuda")
     batch_size = 128
-    num_iters = 100
-    cpu_workers = 32
+    num_iters = 20
+    cpu_workers = 20
 
     train_transforms = transforms.Compose([
         transforms.RandomResizedCrop(224),
@@ -149,7 +149,8 @@ if __name__ == "__main__":
         transform=train_transforms
     )
     dummy_loader = torch.utils.data.DataLoader(
-        dummy_dataset, batch_size=batch_size, shuffle=True, num_workers=cpu_workers, pin_memory=True
+        dummy_dataset, batch_size=batch_size, shuffle=True, 
+        num_workers=cpu_workers, pin_memory=True, persistent_workers=True
     )
 
     with open('model/configs/HAT_Base.json', 'r') as f:
@@ -159,6 +160,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
 
     print("Baseline Training")
+    torch.backends.cuda.enable_flash_sdp(False)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Compilation")
@@ -170,4 +172,10 @@ if __name__ == "__main__":
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     print("\nWith Autocast")
+    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+
+    print("\nWith Flash Attention")
+    torch.backends.cuda.enable_flash_sdp(True)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(False)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
