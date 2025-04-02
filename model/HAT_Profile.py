@@ -204,5 +204,5 @@ if __name__ == "__main__":
 
     print("\nChannels Last Memory (Flash)")
     with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-        compiled_model = torch.compile(model, mode='reduce-overhead')
+        compiled_model = torch.compile(model)
         profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
