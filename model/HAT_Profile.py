@@ -190,3 +190,5 @@ if __name__ == "__main__":
     model = HAT_Classifier(config).to(device)
     model = torch.compile(model)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
+    
+    exit()
