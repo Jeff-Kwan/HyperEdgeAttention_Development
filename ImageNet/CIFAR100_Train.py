@@ -80,7 +80,7 @@ def main():
     # Hyperparameters
     epochs = 100
     batch_size = 128
-    learning_rate = 1e-3
+    learning_rate = 1e-2
     weight_decay = 1e-3
     enable_compile = False
     autocast = True
