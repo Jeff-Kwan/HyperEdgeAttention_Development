@@ -83,7 +83,7 @@ def main():
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = False
-    autocast = False
+    autocast = True
     matmul_precision = 'medium'
     cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
