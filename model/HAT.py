@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from HyperEdgeAttentionVer2 import HyperEdgeAttention
+from .HyperEdgeAttentionVer2 import HyperEdgeAttention
 
 
 class RMSNormPermute(nn.Module):
