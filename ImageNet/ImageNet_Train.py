@@ -202,8 +202,7 @@ def main():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        model = torch.compile(model)
-        criterion = torch.compile(criterion)
+        model = torch.compile(model, mode='max-autotune')
         if flash:
             assert autocast, "Flash Attention requires autocasting to bfloat16"
             torch.backends.cuda.enable_flash_sdp(True)

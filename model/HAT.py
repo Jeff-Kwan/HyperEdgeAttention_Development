@@ -96,7 +96,7 @@ class HAT_Encoder(nn.Module):
         # Initizalizations
         nn.init.kaiming_uniform_(self.in_conv.weight, nonlinearity='linear')
         for d in self.downsample:
-            nn.init.kaiming_uniform_(d.weight, nonlinearity='linear')
+            nn.init.kaiming_uniform_(d[0].weight, nonlinearity='linear')
         
     def forward(self, x):
         # Patch Embedding
