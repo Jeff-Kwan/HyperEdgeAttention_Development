@@ -13,37 +13,34 @@ def measure_performance(model, dummy_input, num_runs=100, autocast=False):
     model.eval()
 
     # Warm up GPU (if applicable) to prevent startup overhead
-    if device.type == "cuda":
-        for _ in range(10):
-            y = model(dummy_input)
-            loss = y.sum()
-            loss.backward()
-        torch.cuda.synchronize()
+    for _ in range(10):
+        y = model(dummy_input)
+        loss = y.sum()
+        loss.backward()
+    torch.cuda.synchronize()
 
+    # Reset peak memory stats before timing
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats(device)
     total_time = 0.0
 
-    if device.type == "cuda":
-        # Reset peak memory stats before timing
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats(device)
+    for _ in range(num_runs):
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
 
-        for _ in range(num_runs):
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
-
-            start_event.record()
-            if autocast:
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                    y = model(dummy_input)
-            else:
+        start_event.record()
+        if autocast:
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
                 y = model(dummy_input)
-            loss = y.sum()
-            loss.backward()
-            end_event.record()
+        else:
+            y = model(dummy_input)
+        loss = y.sum()
+        loss.backward()
+        end_event.record()
 
-            torch.cuda.synchronize()  # Ensure events are recorded
-            elapsed_time = start_event.elapsed_time(end_event)  # In milliseconds
-            total_time += elapsed_time
+        torch.cuda.synchronize()  # Ensure events are recorded
+        elapsed_time = start_event.elapsed_time(end_event)  # In milliseconds
+        total_time += elapsed_time
 
         avg_time = total_time / num_runs
         peak_vram = torch.cuda.max_memory_allocated(device) / (1024 ** 2)  # MB
@@ -77,15 +74,15 @@ if __name__ == "__main__":
     torch.backends.cuda.enable_flash_sdp(False)
     measure_performance(model, dummy_input, num_runs=20)
 
+    print("\nNow with autocast enabled")
+    measure_performance(model, dummy_input, num_runs=20, autocast=True)
+
     print("\nNow with compilation enabled")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.allow_tf32 = True
     torch.set_float32_matmul_precision('medium')
     model = torch.compile(model)
-    measure_performance(model, dummy_input, num_runs=20)
-
-    print("\nNow with autocast enabled")
     measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
     # Clear everything and reinitialize the model
