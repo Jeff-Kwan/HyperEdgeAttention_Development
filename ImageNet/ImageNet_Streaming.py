@@ -67,7 +67,7 @@ val_transforms = transforms.Compose([
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler):
+def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     gc.collect()
     torch.cuda.empty_cache()
     model.train()
@@ -77,23 +77,18 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast, sc
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         optimizer.zero_grad()
         if autocast:
-            with torch.autocast('cuda'):
+            with torch.autocast('cuda', dtype=torch.bfloat16):
                 output = model(data)
                 loss = criterion(output, target)
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-            scaler.step(optimizer)
-            scaler.update()
         else:
             output = model(data)
             loss = criterion(output, target)
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-            loss.backward()
-            optimizer.step()
+        loss.backward()
+        norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+        optimizer.step()
 
         total_loss += loss.item()
-        pbar.set_postfix(loss=loss.item())
+        pbar.set_postfix(loss=loss.item(), norm=norm.item())
 
     return total_loss / len(train_loader)
 
@@ -106,7 +101,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
         for data, target in val_loader:
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
             if autocast:
-                with torch.autocast('cuda'):
+                with torch.autocast('cuda', dtype=torch.bfloat16):
                     output = model(data)
                     loss = criterion(output, target)
             else:
@@ -197,7 +192,6 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    scaler = torch.amp.GradScaler() if autocast else None
 
     # Enable compilation optimizations
     if enable_compile:
@@ -217,7 +211,7 @@ def main():
 
     # Training loop
     for epoch in range(1, epochs + 1):
-        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler)
+        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
         val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 
