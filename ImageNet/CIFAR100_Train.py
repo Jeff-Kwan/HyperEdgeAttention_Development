@@ -79,19 +79,19 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 256
+    batch_size = 128
     learning_rate = 1e-3
     weight_decay = 1e-3
-    enable_compile = True
-    autocast = True
-    matmul_precision = 'medium' if autocast else 'high'
+    enable_compile = False
+    autocast = False
+    matmul_precision = 'medium'
     cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the configuration for HAT_Classifier (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'HAT_Base.json')
+    config_path = os.path.join('model', 'configs', 'HAT_CIFAR100.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -104,7 +104,7 @@ def main():
     now = datetime.now()
     timestamp = now.strftime("%H-%M")
     date_str = now.strftime("%Y-%m-%d")
-    output_dir = os.path.join('output', date_str, f'{timestamp}-HAT-ImageNet')
+    output_dir = os.path.join('output', date_str, f'{timestamp}-HAT-CIFAR100')
     os.makedirs(output_dir, exist_ok=True)
 
     # -----------------------------------------------------------------------------
@@ -148,7 +148,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -156,7 +156,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
@@ -192,11 +192,11 @@ def main():
         metrics['val_accuracy'].append(val_acc)
 
         # Save model checkpoint for this epoch
-        ckpt_path = os.path.join(output_dir, f'ImageNet_HATClassifier.tar')
+        ckpt_path = os.path.join(output_dir, f'CIFAR100_HATClassifier.tar')
         torch.save(model.state_dict(), ckpt_path)
 
         # Save metrics to JSON
-        with open(os.path.join(output_dir, 'ImageNet_metrics.json'), 'w') as f:
+        with open(os.path.join(output_dir, 'CIFAR100_metrics.json'), 'w') as f:
             json.dump(metrics, f)
 
         # Plot and save training and validation curves
@@ -215,7 +215,7 @@ def main():
         ax1.legend(lines + lines2, labels + labels2, loc='upper left')
         plt.title('Loss and Accuracy')
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f'ImageNet_losses.png'))
+        plt.savefig(os.path.join(output_dir, f'CIFAR100_losses.png'))
         plt.close(fig)
 
 if __name__ == '__main__':
