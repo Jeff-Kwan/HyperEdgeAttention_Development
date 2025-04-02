@@ -168,20 +168,6 @@ def main():
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
     ])
-
-        # Enable compilation optimizations
-    if enable_compile:
-        print("Compiling model...")
-        model = torch.compile(model)
-        train_transforms = torch.compile(train_transforms)
-        val_transforms = torch.compile(val_transforms)
-        torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.allow_tf32 = True
-        torch.set_float32_matmul_precision(matmul_precision)
-        if matmul_precision == 'medium':
-            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
-            torch.backends.cuda.allow_fp16_bf16_reduction_math_sdp(True)
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
     train_dataset = ImageNetDataset(train_dataset_raw, device, transform=train_transforms)
@@ -209,6 +195,18 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    # Enable compilation optimizations
+    if enable_compile:
+        print("Compiling model...")
+        model = torch.compile(model)
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.set_float32_matmul_precision(matmul_precision)
+        # if matmul_precision == 'medium':
+        #     torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
+        #     torch.backends.cuda.allow_fp16_bf16_reduction_math_sdp(True)
 
     # To store metrics across epochs
     metrics = {
