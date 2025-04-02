@@ -81,7 +81,7 @@ class PredictionHead(nn.Module):
     def __init__(self, in_channels, classes):
         super(PredictionHead, self).__init__()
         self.Q = nn.Parameter(torch.randn(classes, in_channels))
-        self.class_vec = nn.Parameter(torch.randn(classes, in_channels) / in_channels**0.5)
+        self.class_vec = nn.Parameter(self.Q.data / in_channels**0.5)
         self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
 
     def forward(self, x):
