@@ -1,12 +1,11 @@
 import torch
-from torch import nn
 import json
 
 from HAT import HAT_Classifier
 import time
 
 
-def measure_performance(model, dummy_input, num_runs=100):
+def measure_performance(model, dummy_input, num_runs=100, autocast=False):
     # Ensure model is on the same device as dummy_input and set it to eval mode
     device = dummy_input.device
     model = model.to(device)
@@ -32,7 +31,11 @@ def measure_performance(model, dummy_input, num_runs=100):
             end_event = torch.cuda.Event(enable_timing=True)
 
             start_event.record()
-            y = model(dummy_input)
+            if autocast:
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    y = model(dummy_input)
+            else:
+                y = model(dummy_input)
             loss = y.sum()
             loss.backward()
             end_event.record()
@@ -85,5 +88,4 @@ if __name__ == "__main__":
     torch.backends.cuda.enable_flash_sdp(True)
     torch.backends.cuda.enable_mem_efficient_sdp(False)
     torch.backends.cuda.enable_math_sdp(False)
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
-        measure_performance(model, dummy_input, num_runs=100)
+    measure_performance(model, dummy_input, num_runs=100, autocast=True)
