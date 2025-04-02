@@ -160,13 +160,13 @@ class HAT_Classifier(nn.Module):
         self.encoder = HAT_Encoder(model_params)
 
         # Classifier Prediction head
-        self.out = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.RMSNorm(channels[-1], elementwise_affine=False),
-            nn.Linear(channels[-1], out_channels, bias=False)
-        )
-        # self.out = PredictionHead(channels[-1], out_channels)
+        # self.out = nn.Sequential(
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Flatten(),
+        #     nn.RMSNorm(channels[-1], elementwise_affine=False),
+        #     nn.Linear(channels[-1], out_channels, bias=False)
+        # )
+        self.out = PredictionHead(channels[-1], out_channels)
         
     def encode(self, x):
         x = self.encoder(x)

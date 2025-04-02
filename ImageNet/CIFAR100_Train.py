@@ -78,7 +78,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
 # -----------------------------------------------------------------------------
 def main():
     # Hyperparameters
-    epochs = 100
+    epochs = 10
     batch_size = 128
     learning_rate = 1e-3
     weight_decay = 1e-3
