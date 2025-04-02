@@ -175,10 +175,10 @@ if __name__ == "__main__":
     # profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False)
 
     # print("\nWith Compilation")
-    # torch.backends.cudnn.enabled = True
-    # torch.backends.cudnn.benchmark = True
-    # torch.backends.cudnn.allow_tf32 = True
-    # torch.set_float32_matmul_precision('medium')
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision('medium')
     # compiled_model = torch.compile(model)
     # profile_training_run(compiled_model, optimizer, criterion, dummy_loader, use_autocast=False)
 
