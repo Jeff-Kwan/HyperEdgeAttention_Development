@@ -36,6 +36,11 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
     total_backward_time = 0.0
     total_optim_time = 0.0
 
+    start_cpu = time.perf_counter()
+    start_gpu = torch.cuda.Event(enable_timing=True)
+    end_gpu = torch.cuda.Event(enable_timing=True)
+    start_gpu.record()
+
     for i, (inputs, targets) in enumerate(data_loader):
         # Data Loading (CPU timing)
         data_start = time.perf_counter()
@@ -90,24 +95,21 @@ def profile_training_run(model, optimizer, criterion, data_loader, use_autocast=
     avg_optim = total_optim_time / num_iters
 
     # Run again to get total CPU and GPU time
-    start_cpu = time.perf_counter()
-    start_gpu = torch.cuda.Event(enable_timing=True)
-    end_gpu = torch.cuda.Event(enable_timing=True)
-    start_gpu.record()
+    
 
-    for i, (inputs, targets) in enumerate(data_loader):
-        inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
-        optimizer.zero_grad(set_to_none=True)
-        if use_autocast:
-            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-        else:
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+    # for i, (inputs, targets) in enumerate(data_loader):
+    #     inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+    #     optimizer.zero_grad(set_to_none=True)
+    #     if use_autocast:
+    #         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+    #             outputs = model(inputs)
+    #             loss = criterion(outputs, targets)
+    #     else:
+    #         outputs = model(inputs)
+    #         loss = criterion(outputs, targets)
+    #     loss.backward()
+    #     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    #     optimizer.step()
 
     end_gpu.record()
     torch.cuda.synchronize(device)
@@ -179,7 +181,12 @@ if __name__ == "__main__":
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
 
     print("\nWith Flash Attention")
+    del model
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats(device)
     torch.backends.cuda.enable_flash_sdp(True)
     torch.backends.cuda.enable_mem_efficient_sdp(False)
     torch.backends.cuda.enable_math_sdp(False)
+    model = HAT_Classifier(config).to(device)
+    model = torch.compile(model)
     profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
