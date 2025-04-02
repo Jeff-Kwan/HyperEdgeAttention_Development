@@ -80,7 +80,8 @@ class PredictionHead(nn.Module):
     '''Prediction Head via Attention Aggregation first'''
     def __init__(self, in_channels, classes):
         super(PredictionHead, self).__init__()
-        self.class_Q = nn.Parameter(torch.randn(classes, in_channels))
+        self.Q = nn.Parameter(torch.randn(classes, in_channels))
+        self.class_vec = nn.Parameter(torch.randn(classes, in_channels))
         self.norm = nn.RMSNorm(in_channels, elementwise_affine=False)
         self.sqrt_dk = in_channels**0.5
 
@@ -88,9 +89,9 @@ class PredictionHead(nn.Module):
         B, C, H, W = x.shape
         x = self.norm(x.permute(0, 2, 3, 1).reshape(B, H*W, C))
         # SDA Weighted x for each class
-        x = F.scaled_dot_product_attention(self.class_Q, x, x)
+        x = F.scaled_dot_product_attention(self.Q, x, x)
         # Inner Product
-        return torch.sum(x * self.class_Q / self.sqrt_dk, dim=-1)
+        return torch.sum(x * self.class_vec / self.sqrt_dk, dim=-1)
     
 
 class HAT_Encoder(nn.Module):
