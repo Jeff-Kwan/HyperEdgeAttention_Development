@@ -198,6 +198,5 @@ if __name__ == "__main__":
     with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
         profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=True)
 
-    print("\nChannels Last Memory Format (Flash)")
-    with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
-        profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
+    print("\nChannels Last Memory")
+    profile_training_run(model, optimizer, criterion, dummy_loader, use_autocast=False, channels_last=True)
