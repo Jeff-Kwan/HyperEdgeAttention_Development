@@ -11,7 +11,6 @@ from datasets import load_dataset
 from torchvision import transforms
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-import gc
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
@@ -51,8 +50,6 @@ class ImageNetDataset(Dataset):
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
 def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
-    gc.collect()
-    torch.cuda.empty_cache()
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
@@ -155,7 +152,8 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = transforms.Compose([
         transforms.RandomResizedCrop(224),
-        transforms.RandAugment(),
+        transforms.RandomHorizontalFlip(),
+        # transforms.RandAugment(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
@@ -180,7 +178,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=3,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -188,7 +186,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=3,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
@@ -199,14 +197,11 @@ def main():
     # Enable compilation optimizations
     if enable_compile:
         print("Compiling model...")
-        model = torch.compile(model)
+        model = torch.compile(model, mode='max-autotune')
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        # if matmul_precision == 'medium':
-        #     torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
-        #     torch.backends.cuda.allow_fp16_bf16_reduction_math_sdp(True)
 
     # To store metrics across epochs
     metrics = {
