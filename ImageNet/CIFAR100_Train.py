@@ -21,7 +21,7 @@ from model import HAT_Classifier
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
+def train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler):
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
@@ -30,15 +30,25 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
         data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
         if autocast:
-            with torch.autocast('cuda', dtype=torch.bfloat16):
+            with torch.autocast('cuda', dtype=autocast):
                 output = model(data)
                 loss = criterion(output, target)
+                if autocast == torch.float16:   # Scaler required for fp16
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:                       # For bfloat16, no scaler needed
+                    loss.backward()
+                    norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
         else:
             output = model(data)
             loss = criterion(output, target)
-        loss.backward()
-        norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+            loss.backward()
+            norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item()
         pbar.set_postfix(loss=loss.item(), norm=norm.item())
@@ -56,7 +66,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
             data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
             data = data.contiguous(memory_format=torch.channels_last)
             if autocast:
-                with torch.autocast('cuda', dtype=torch.bfloat16):
+                with torch.autocast('cuda', dtype=autocast):
                     output = model(data)
                     loss = criterion(output, target)
             else:
@@ -83,9 +93,9 @@ def main():
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
-    autocast = True
+    autocast = torch.bfloat16
     matmul_precision = 'medium'
-    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = 1#min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -163,6 +173,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    scaler = torch.GradScaler() if autocast==torch.float16 else None
 
     # Enable compilation optimizations
     if enable_compile:
@@ -183,7 +194,7 @@ def main():
 
     # Training loop
     for epoch in range(1, epochs + 1):
-        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
+        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast, scaler)
         val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 
