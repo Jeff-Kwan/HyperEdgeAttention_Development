@@ -33,13 +33,13 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast, sc
             with torch.autocast('cuda', dtype=autocast):
                 output = model(data)
                 loss = criterion(output, target)
-                if autocast == torch.float16:   # Scaler required for fp16
+                if scaler:
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
                     norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     scaler.step(optimizer)
                     scaler.update()
-                else:                       # For bfloat16, no scaler needed
+                else:   # For bfloat16, no scaler needed
                     loss.backward()
                     norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
@@ -95,7 +95,7 @@ def main():
     enable_compile = True
     autocast = torch.bfloat16
     matmul_precision = 'medium'
-    cpu_workers = 1#min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
