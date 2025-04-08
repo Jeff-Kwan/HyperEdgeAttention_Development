@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.attention import sdpa_kernel, SDPBackend
 
 class HyperEdgeAttention(nn.Module):
     '''Fully data-dependent Hypergraph Convolution by Attention-like mechanism'''
@@ -50,8 +51,9 @@ class HyperEdgeAttention(nn.Module):
         # Theoretically almost equivalent to Hypergraph Convolution DinvHW @ (BinvH_T @ v)
         # Except for normalization Dinv because WE and H are not normalized together
         hq, hk, q, k, v, WE = map(lambda x: x.contiguous(), (hq, hk, q, k, v, WE))
-        z = F.scaled_dot_product_attention(hq, k, v)
-        y = F.scaled_dot_product_attention(q, hk, z*WE)
+        with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION, SDPBackend.FLASH_ATTENTION, SDPBackend.CUDNN_ATTENTION]):
+            z = F.scaled_dot_product_attention(hq, k, v)
+            y = F.scaled_dot_product_attention(q, hk, z*WE)
 
         # Output Projection & Reshape
         y = self.O(y.transpose(2, 3).reshape(B, C, height, width))
