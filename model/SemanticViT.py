@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from ParallelLinear import ParallelLinear
+from .ParallelLinear import ParallelLinear
 
 
 class ParallelSwiGLU(nn.Module):
@@ -111,7 +111,7 @@ class SemanticViT(nn.Module):
         dgrowth = model_params["dgrowth"]
         heads = model_params["heads"]
 
-        self.latents = nn.Parameter(torch.randn(n_vectors, 1, n_embed) / 10)
+        self.latents = nn.Parameter(torch.randn(n_vectors, 1, n_embed))
         self.dense_embed = DenseConvEmbedding(in_channels, n_embed, dgrowth)
         self.in_norm = nn.Sequential(nn.Linear(n_embed, n_embed, bias=False),
                                      nn.RMSNorm(n_embed, elementwise_affine=False))
@@ -120,8 +120,8 @@ class SemanticViT(nn.Module):
             for _ in range(num_layers)
         ])
 
-        self.out_norm_x = nn.RMSNorm(n_embed, elementwise_affine=False)
-        self.x_out = nn.Sequential(nn.RMSNorm(n_embed, elementwise_affine=False),
+        # self.out_norm_x = nn.RMSNorm(n_embed, elementwise_affine=False)
+        self.out = nn.Sequential(nn.RMSNorm(n_embed, elementwise_affine=False),
                                    nn.Linear(n_embed, out_channels))
 
     def forward(self, x):
@@ -136,8 +136,8 @@ class SemanticViT(nn.Module):
             x, z = layer(x, z, x_shape)
 
         # Classifier Output
-        x = torch.mean(self.out_norm_x(x), dim=0)
-        y = self.x_out(x)
+        # x = torch.mean(self.out_norm_x(x), dim=0)
+        y = self.out(z[0,...])
         return y
     
 
