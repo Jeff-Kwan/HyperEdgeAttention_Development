@@ -15,7 +15,9 @@ import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model import HAT_Classifier
+# from model import HAT_Classifier
+from model import SemanticViT
+
 
 
 # -----------------------------------------------------------------------------
@@ -101,12 +103,12 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the configuration for HAT_Classifier (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'HAT_CIFAR100.json')
+    config_path = os.path.join('model', 'configs', 'SViT_CIFAR100.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
     # Initialize the model with configuration
-    model = HAT_Classifier(config).to(device)
+    model = SemanticViT(config).to(device)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'Initialized HAT - Size: {total_params/1e6:.2f} M')
 

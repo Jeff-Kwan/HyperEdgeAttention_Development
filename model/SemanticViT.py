@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from ParallelLinear import ParallelLinear
+from .ParallelLinear import ParallelLinear
 
 
 class ParallelSwiGLU(nn.Module):
