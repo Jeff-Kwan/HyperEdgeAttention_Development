@@ -10,7 +10,7 @@ import json
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from model import HAT_Classifier
+from model.SemanticViT import SemanticViT
 
 
 
@@ -57,16 +57,17 @@ def main():
     weight_decay = 1e-3
 
     enable_compile = True
-    cpu_workers = 8
+    matmul_precision = 'high'
+    cpu_workers = 1
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
     # CIFAR10 dataset transformation: Convert to tensor and normalize
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(),
-        transforms.RandomAffine(degrees=180, translate=(0.1, 0.1), scale=(0.8, 1.2), shear=(-5, 5)),
-        transforms.ColorJitter(brightness=0.3, contrast=0.2, saturation=0.1, hue=0.01),
+        # transforms.RandomVerticalFlip(),
+        # transforms.RandomAffine(degrees=180, translate=(0.1, 0.1), scale=(0.8, 1.2), shear=(-5, 5)),
+        # transforms.ColorJitter(brightness=0.3, contrast=0.2, saturation=0.1, hue=0.01),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
@@ -86,8 +87,8 @@ def main():
                             pin_memory=True, num_workers=cpu_workers)
 
     # Initialize the model, loss function, and optimizer
-    config = json.load(open('model/configs/HAT_CIFAR10.json'))
-    model = HAT_Classifier(config).to(device)
+    config = json.load(open('model/configs/SViT_CIFAR10.json'))
+    model = SemanticViT(config).to(device)
     print(f'Initialized model with {sum(p.numel() for p in model.parameters())/1e3} K parameters')
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -95,10 +96,12 @@ def main():
 
     # Compilation Optimizations
     if enable_compile:
-        model = torch.compile(model)
+        print("Compiling model...")
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision('high')
+        torch.backends.cudnn.allow_tf32 = True
+        torch.set_float32_matmul_precision(matmul_precision)
+        # model = torch.compile(model)
 
     # Training loop
     metrics = {

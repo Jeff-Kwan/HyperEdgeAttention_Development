@@ -1,0 +1,9 @@
+{
+    "in_channels": 3,
+    "n_embed": 32,
+    "out_channels": 10,
+    "num_layers": 4,
+    "n_vectors": 32,
+    "dgrowth": 8,
+    "heads": 4
+}
