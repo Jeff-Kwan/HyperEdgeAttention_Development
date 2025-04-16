@@ -95,7 +95,7 @@ def main():
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
-    autocast = torch.bfloat16
+    autocast = False
     matmul_precision = 'medium'
     cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
 
@@ -184,7 +184,7 @@ def main():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        model = torch.compile(model)
+        # model = torch.compile(model)
 
     # To store metrics across epochs
     metrics = {
