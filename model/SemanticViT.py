@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from .ParallelLinear import ParallelLinear
+from ParallelLinear import ParallelLinear
 
 
 class ParallelSwiGLU(nn.Module):
@@ -74,10 +74,11 @@ class DenseConvEmbedding(nn.Module):
     def __init__(self, in_channels, out_channels, growth, bias=True):
         super(DenseConvEmbedding, self).__init__()
         assert out_channels % growth == 0, "Output channels must be divisible by growth factor."
+        assert growth >= 8 and growth % 2 == 0, "Growth factor must be >= 8 and even."
         self.layers = out_channels // growth
         self.in_conv = nn.Sequential(
-            nn.Conv2d(in_channels, growth, 1, 1, 0, bias=bias),
-            nn.GroupNorm(1, growth))
+            nn.Conv2d(in_channels, growth*2, 1, 1, 0, bias=bias),
+            nn.GroupNorm(4, growth*2))
         self.convs = nn.ModuleList([
             nn.Sequential(
                 nn.SiLU(),
@@ -89,7 +90,11 @@ class DenseConvEmbedding(nn.Module):
 
     def forward(self, x):
         # x shape: (Batch, in_channels, H, W)
-        x = self.in_conv(x)
+        x1, x2, x3, x4 = self.in_conv(x).chunk(4, dim=1)
+        with torch.no_grad():
+            h_frac = torch.linspace(0, 1, x.shape[2], device=x.device, requires_grad=False).view(1, 1, -1, 1)
+            w_frac = torch.linspace(0, 1, x.shape[3], device=x.device, requires_grad=False).view(1, 1, 1, -1)
+        x = torch.cat([x1*h_frac + x2*(1-h_frac), x3*w_frac + x4*(1-w_frac)], dim=1)
         for conv in self.convs:
             x = torch.cat([x, conv(x)], dim=1)
         return x
