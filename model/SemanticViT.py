@@ -7,8 +7,8 @@ from .ParallelLinear import ParallelLinear
 class ParallelSwiGLU(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, n_vectors, bias=True):
         super(ParallelSwiGLU, self).__init__()
-        self.linear1 = ParallelLinear(in_channels, hidden_channels * 2, n_vectors, bias=bias)
-        self.linear2 = ParallelLinear(hidden_channels, out_channels, n_vectors, bias=bias)
+        self.linear1 = nn.Linear(in_channels, hidden_channels * 2, bias=bias)
+        self.linear2 = nn.Linear(hidden_channels, out_channels, bias=bias)
         self.act = nn.SiLU()
 
     def forward(self, x):
