@@ -1,14 +1,14 @@
 import torch
 from torch import nn
 
-from .ParallelLinear import ParallelLinear
+from ParallelLinear import ParallelLinear
 
 
 class ParallelSwiGLU(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, n_vectors, bias=True):
         super(ParallelSwiGLU, self).__init__()
-        self.linear1 = nn.Linear(in_channels, hidden_channels * 2, bias=bias)
-        self.linear2 = nn.Linear(hidden_channels, out_channels, bias=bias)
+        self.linear1 = ParallelLinear(in_channels, hidden_channels * 2, n_vectors, bias=bias)
+        self.linear2 = ParallelLinear(hidden_channels, out_channels, n_vectors, bias=bias)
         self.act = nn.SiLU()
 
     def forward(self, x):
@@ -69,6 +69,50 @@ class DualPathBlock(nn.Module):
         x_norm = self.norms[6](x)
         x = x + self.CSwiGLU(x_norm, x_shape)
         return x, z
+    
+
+class ImgBlock(nn.Module):
+    def __init__(self, channels, hidden_channels, heads, bias=False):
+        super(ImgBlock, self).__init__()
+        self.LatentCrossImg = nn.MultiheadAttention(channels, heads, bias=False)
+        self.CSwiGLU = ConvSwiGLU(channels, hidden_channels, channels, bias=bias)
+        self.norms = nn.ModuleList([nn.RMSNorm(channels) for _ in range(3)])
+
+    def forward(self, x, z, x_shape):
+        # Cross Attention from Latent to Image
+        x_norm = self.norms[0](x)
+        z_norm = self.norms[1](z)
+        x = x + self.LatentCrossImg(x_norm, z_norm, z_norm, need_weights=False)[0]
+
+        # Image Conv SwiGLU
+        x_norm = self.norms[2](x)
+        x = x + self.CSwiGLU(x_norm, x_shape)
+        return x
+    
+
+class LatentBlock(nn.Module):
+    def __init__(self, channels, hidden_channels, n_vectors, heads, bias=False):
+        super(LatentBlock, self).__init__()
+        self.ImgCrossLatent = nn.MultiheadAttention(channels, heads, bias=False)
+        self.LatentSelfMHA = nn.MultiheadAttention(channels, heads, bias=False)
+        self.PSwiGLU = ParallelSwiGLU(channels, hidden_channels, channels, n_vectors, bias=bias)
+        self.norms = nn.ModuleList([nn.RMSNorm(channels) for _ in range(4)])
+
+    def forward(self, x, z):
+        # Imge Cross Attention from Image to Latent
+        x_norm = self.norms[0](x)
+        z_norm = self.norms[1](z)
+        z = z + self.ImgCrossLatent(z_norm, x_norm, x_norm, need_weights=False)[0]
+
+        # Latent self attention
+        z_norm = self.norms[2](z)
+        z = z + self.LatentSelfMHA(z_norm, z_norm, z_norm, need_weights=False)[0]
+
+        # Latent Parallel SwiGLU
+        z_norm = self.norms[3](z)
+        z = z + self.PSwiGLU(z_norm)
+        return z
+
 
 class DenseConvEmbedding(nn.Module):
     def __init__(self, in_channels, out_channels, growth, bias=True):
@@ -115,8 +159,17 @@ class SemanticViT(nn.Module):
         self.dense_embed = DenseConvEmbedding(in_channels, n_embed, dgrowth)
         self.in_norm = nn.Sequential(nn.Linear(n_embed, n_embed, bias=False),
                                      nn.RMSNorm(n_embed, elementwise_affine=False))
-        self.layers = nn.ModuleList([
-            DualPathBlock(n_embed, n_embed, n_vectors, heads) 
+        # self.layers = nn.ModuleList([
+        #     DualPathBlock(n_embed, n_embed, n_vectors, heads) 
+        #     for _ in range(num_layers)
+        # ])
+        self.n_layers = num_layers
+        self.latent_layers = nn.ModuleList([
+            LatentBlock(n_embed, n_embed, n_vectors, heads) 
+            for _ in range(num_layers+1)
+        ])
+        self.img_layers = nn.ModuleList([
+            ImgBlock(n_embed, n_embed, heads) 
             for _ in range(num_layers)
         ])
 
@@ -135,8 +188,12 @@ class SemanticViT(nn.Module):
         z = self.latents.repeat(1, x_shape[0], 1)
 
         # Dual Pathway ViT Blocks
-        for layer in self.layers:
-            x, z = layer(x, z, x_shape)
+        z = self.latent_layers[0](x, z)
+        z = z - self.latents / (self.n_layers + 1)
+        for i in range(self.n_layers):
+            x = self.img_layers[i](x, z, x_shape)
+            z = self.latent_layers[i+1](x, z)
+            z = z - self.latents / (self.n_layers + 1)
 
         # Classifier Output
         z = self.out_lin(self.out_norm(z)).permute(1, 0, 2).reshape(x_shape[0], -1)
