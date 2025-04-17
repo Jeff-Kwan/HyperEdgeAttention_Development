@@ -7,8 +7,8 @@ from .ParallelLinear import ParallelLinear
 class ParallelSwiGLU(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, n_vectors, bias=True):
         super(ParallelSwiGLU, self).__init__()
-        self.linear1 = ParallelLinear(in_channels, hidden_channels * 2, n_vectors, bias=bias)
-        self.linear2 = ParallelLinear(hidden_channels, out_channels, n_vectors, bias=bias)
+        self.linear1 = nn.Linear(in_channels, hidden_channels * 2, bias=bias)
+        self.linear2 = nn.Linear(hidden_channels, out_channels, bias=bias)
         self.act = nn.SiLU()
 
     def forward(self, x):
@@ -120,9 +120,12 @@ class SemanticViT(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # self.out_norm_x = nn.RMSNorm(n_embed, elementwise_affine=False)
-        self.out = nn.Sequential(nn.RMSNorm(n_embed, elementwise_affine=False),
-                                   nn.Linear(n_embed, out_channels))
+        self.out_norm = nn.RMSNorm(n_embed, elementwise_affine=False)
+        out_embed = (out_channels // n_embed + 1)
+        out_embed = out_embed + out_embed % 2
+        self.out_lin = ParallelLinear(n_embed, out_embed, n_vectors, bias=False)
+        self.out = nn.Sequential(nn.RMSNorm(out_embed*n_vectors, elementwise_affine=False),
+                                   nn.Linear(out_embed*n_vectors, out_channels))
 
     def forward(self, x):
         # Input Embedding
@@ -136,8 +139,8 @@ class SemanticViT(nn.Module):
             x, z = layer(x, z, x_shape)
 
         # Classifier Output
-        # x = torch.mean(self.out_norm_x(x), dim=0)
-        y = self.out(z[0,...])
+        z = self.out_lin(self.out_norm(z)).permute(1, 0, 2).reshape(x_shape[0], -1)
+        y = self.out(z)
         return y
     
 
