@@ -189,11 +189,9 @@ class SemanticViT(nn.Module):
 
         # Dual Pathway ViT Blocks
         z = self.latent_layers[0](x, z)
-        z = z - self.latents / (self.n_layers + 1)
         for i in range(self.n_layers):
             x = self.img_layers[i](x, z, x_shape)
             z = self.latent_layers[i+1](x, z)
-            z = z - self.latents / (self.n_layers + 1)
 
         # Classifier Output
         z = self.out_lin(self.out_norm(z)).permute(1, 0, 2).reshape(x_shape[0], -1)
