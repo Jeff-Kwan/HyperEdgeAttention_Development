@@ -1,0 +1,11 @@
+{
+    "in_channels": 3,
+    "latent_channels": 16,
+    "latent_dim": 32,
+    "n_latents": 32,
+    "patches": [2, 4],
+    "out_channels": 100,
+    "layers": 5,
+    "heads": 4,
+    "dgrowth": 4
+}

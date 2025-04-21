@@ -247,7 +247,7 @@ if __name__ == '__main__':
         'n_latents': N,
         'patches': [4, 16],
         'out_channels': 1000,
-        'layers': 5,
+        'layers': 9,
         'heads': 8,
         'dgrowth': 4
     }).to(device)
