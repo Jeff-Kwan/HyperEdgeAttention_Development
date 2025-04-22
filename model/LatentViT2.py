@@ -20,12 +20,6 @@ class SwiGLU(nn.Module):
         self.linear2 = nn.Linear(hidden_channels, out_channels, bias=bias)
         self.act = nn.SiLU()
 
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-
     def forward(self, x):
         # x shape: (Batch, N, Channels)
         z1, z2 = self.linear1(x).chunk(2, dim=-1)
