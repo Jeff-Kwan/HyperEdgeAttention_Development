@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
-from model import LatentViT
+from model.LatentViT2 import LatentViT
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -91,7 +91,7 @@ def main():
     enable_compile = True
     autocast = False
     matmul_precision = 'medium'
-    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = 4#min(max(1, mp.cpu_count() - 1), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

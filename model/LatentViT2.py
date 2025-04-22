@@ -4,6 +4,15 @@ from torch.nn import functional as F
 
 from .ParallelLinear import ParallelLinear
 
+class RMSNormTranspose(nn.Module):
+    def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
+        super(RMSNormTranspose, self).__init__()
+        self.dim = dim
+        self.norm = nn.RMSNorm(features, eps, elementwise_affine)
+
+    def forward(self, x):
+        return self.norm(x.transpose(self.dim, -1)).transpose(self.dim, -1)
+
 class SwiGLU(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, bias=True):
         super(SwiGLU, self).__init__()
@@ -35,6 +44,7 @@ class DenseConvEmbedding(nn.Module):
             nn.GroupNorm(4, 16))
         self.convs = nn.ModuleList([
             nn.Sequential(
+                nn.SiLU(),
                 nn.Conv2d(intermediate_c[i], growth, 3, 1, 1, bias=bias),
                 nn.GroupNorm(1, growth),
             )
@@ -53,16 +63,19 @@ class DenseConvEmbedding(nn.Module):
         return x
 
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_c, hidden_c, out_c, kernel_size=3, bias=True):
-        super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_c, hidden_c, kernel_size, 1, kernel_size//2, bias=bias)
-        self.conv2 = nn.Conv2d(hidden_c, out_c, kernel_size, 1, kernel_size//2, bias=bias)
+    
+class CSwiGLU(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels, bias=True):
+        super(CSwiGLU, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_channels*2, 1, 1, 0, bias=bias),
+            nn.Conv2d(hidden_channels*2, hidden_channels*2, 3, 1, 1, groups=hidden_channels*2, bias=bias))
+        self.conv2 = nn.Conv2d(hidden_channels, out_channels, 1, 1, 0, bias=bias)
         self.act = nn.SiLU()
 
     def forward(self, x):
-        # x shape: (Batch, Channels, H, W)
-        return self.conv2(self.act(self.conv1(x)))
+        x1, x2 = self.conv1(x).chunk(2, dim=1)
+        return self.conv2(x1 * self.act(x2))
 
 
 class Latent2PatchMHA(nn.Module):
@@ -97,13 +110,13 @@ class Latent2PatchMHA(nn.Module):
     
 
 class Patch2LatentMHA(nn.Module):
-    def __init__(self, patch_size, in_c, in_vec, vec_embed, heads, bias=False):
+    def __init__(self, patch_size, in_c, vec_embed, heads, bias=False):
         super(Patch2LatentMHA, self).__init__()
         assert vec_embed % heads == 0, "vec_embed must be divisible by heads."
         self.heads = heads
         self.head_dim = vec_embed // heads
         self.vec_embed = vec_embed
-        self.Q = nn.Linear(in_vec, vec_embed, bias=bias)
+        self.Q = nn.Linear(vec_embed, vec_embed, bias=bias)
         self.KV = nn.Conv2d(in_c, vec_embed*2, patch_size, patch_size, 0, bias=bias)
         self.O = nn.Linear(vec_embed, vec_embed, bias=bias)
 
@@ -127,68 +140,58 @@ class Patch2LatentMHA(nn.Module):
     
 
 class Layer(nn.Module):
-    def __init__(self, patches, in_c, in_vec, heads, bias, last=False):
+    def __init__(self, patches, in_c, vec_embed, heads, bias, last=False):
         super(Layer, self).__init__()
         self.last = last
-        vec_embeds = [in_vec] + [in_vec*2**i for i in range(len(patches))]
-        total_embed = sum(vec_embeds)
-        self.inds = [sum(vec_embeds[:i]) for i in range(len(vec_embeds)+1)]
 
-        self.SwiGLU = SwiGLU(total_embed, total_embed*4, total_embed, bias)
-        self.latentMHA = nn.MultiheadAttention(total_embed, heads, batch_first=True)
+        self.SwiGLU = SwiGLU(vec_embed, vec_embed, vec_embed, bias)
+        self.latentMHA = nn.MultiheadAttention(vec_embed, heads, bias=False, batch_first=True)
         self.patch2latents = nn.ModuleList([
-            Patch2LatentMHA(patches[i], in_c, in_vec, vec_embeds[i+1], heads, bias) 
+            Patch2LatentMHA(patches[i], in_c, vec_embed, heads, bias) 
             for i in range(len(patches))
         ])
 
-        self.z_norms = nn.ModuleList([nn.RMSNorm(total_embed) for _ in range(2)])
-        self.part_norms = nn.ModuleList([nn.RMSNorm(E) for E in vec_embeds])
-        self.x_norms = [nn.GroupNorm(1, in_c)]
-        self.vec_norms = [nn.RMSNorm(in_vec)]
+        self.z_norms = [nn.RMSNorm(vec_embed)] * 3
+        self.x_norms = [RMSNormTranspose(1, in_c)] * 2
 
         if not last:
             self.latent2patchs = nn.ModuleList([
-                Latent2PatchMHA(patches[i], in_c, vec_embeds[i+1], heads, bias) 
+                Latent2PatchMHA(patches[i], in_c, vec_embed, heads, bias) 
                 for i in range(len(patches))
             ])
-            self.conv = ConvBlock(in_c, in_c, in_c, 3, bias)
+            self.CSwiGLU = CSwiGLU(in_c, in_c, in_c, bias)
 
-            self.x_norms += [nn.GroupNorm(1, in_c)]
-            self.vec_norms += [nn.RMSNorm(E) for E in vec_embeds[1:]]
+            self.x_norms += [RMSNormTranspose(1, in_c)]
+            self.z_norms += [nn.RMSNorm(vec_embed)]
             
         self.x_norms = nn.ModuleList(self.x_norms)
-        self.vec_norms = nn.ModuleList(self.vec_norms)
+        self.z_norms = nn.ModuleList(self.z_norms)
 
 
     def forward(self, x, z):
         # x shape: (Batch, Channels, H, W), z shape: (Batch, N, E)
-        
+
         # Patch to Latents
         x_norm = self.x_norms[0](x)
-        z_norm = self.vec_norms[0](z)
-        z_list = [self.part_norms[0](z)]
-        for p2l, pnorm in zip(self.patch2latents, self.part_norms[1:]):
-            z_list.append(pnorm(p2l(x_norm, z_norm)))
-        z_full = torch.cat(z_list, dim=-1).contiguous()
+        z_norm = self.z_norms[0](z)
+        for p2l in self.patch2latents:
+            z = z + p2l(x_norm, z_norm)
 
         # Latent Self Attention & SwiGLU
-        z_norm = self.z_norms[0](z_full)
-        z_full = z_full + self.latentMHA(z_norm, z_norm, z_norm, need_weights=False)[0]
+        z_norm = self.z_norms[1](z)
+        z = z + self.latentMHA(z_norm, z_norm, z_norm, need_weights=False)[0]
 
-        z_norm = self.z_norms[1](z_full)
-        z_full = z_full + self.SwiGLU(z_norm)
-
-        # Update Propagated Latents
-        z = z + z_full[...,self.inds[0]:self.inds[1]]
+        z_norm = self.z_norms[2](z)
+        z = z + self.SwiGLU(z_norm)
 
         # Latents to Patch
         if not self.last:
-            x_list = []
-            for i, (l2p, norm) in enumerate(zip(self.latent2patchs, self.vec_norms[1:])):
-                x_list.append(l2p(x_norm, norm(z_full[...,self.inds[i+1]:self.inds[i+2]])))
-            x = x + sum(x_list)
             x_norm = self.x_norms[1](x)
-            x = x + self.conv(x_norm)
+            z_norm = self.z_norms[3](z)
+            for l2p in self.latent2patchs:
+                x = x + l2p(x_norm, z_norm)
+            x_norm = self.x_norms[2](x)
+            x = x + self.CSwiGLU(x_norm)
 
         return x, z
     
@@ -209,6 +212,8 @@ class LatentViT(nn.Module):
         assert n_embed % heads == 0, "latent_dim must be divisible by heads."
 
         self.dense_embed = DenseConvEmbedding(in_c, n_c, dgrowth, bias)
+        self.in_norm = nn.Sequential(nn.Conv2d(n_c, n_c, 1, 1, 0, bias=False),
+                                     RMSNormTranspose(1, n_c, elementwise_affine=False))
         self.latents = nn.Parameter(torch.randn(1, n_vectors, n_embed))
         self.layers = nn.ModuleList([
             Layer(patches, n_c, n_embed, heads, bias, last=(i == layers-1)) 
@@ -225,10 +230,13 @@ class LatentViT(nn.Module):
     def forward(self, x):
         # x shape: (Batch, Channels, H, W), z shape: (Batch, N, E)
         x = self.dense_embed(x)
+        x = self.in_norm(x)
         z = self.latents.expand(x.shape[0], -1, -1)
 
         for layer in self.layers:
             x, z = layer(x, z)
+
+        z = z - self.latents
 
         z = self.out_lin(self.out_norm(z).transpose(0,1)).transpose(0,1).reshape(x.shape[0], -1)
         y = self.out(z)
