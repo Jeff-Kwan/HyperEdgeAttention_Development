@@ -1,8 +1,8 @@
 {
     "in_channels": 3,
-    "latent_channels": 64,
-    "latent_dim": 64,
-    "n_latents": 64,
+    "latent_channels": 32,
+    "latent_dim": 32,
+    "n_latents": 32,
     "patches": [1],
     "out_channels": 100,
     "layers": 4,
