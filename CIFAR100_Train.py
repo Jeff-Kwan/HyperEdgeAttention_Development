@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
-from model.LatentViT2 import LatentViT
+from model.LatentViT3 import LatentViT
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
