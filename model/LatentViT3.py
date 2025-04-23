@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from ParallelLinear import ParallelLinear
+from .ParallelLinear import ParallelLinear
 
 class RMSNormTranspose(nn.Module):
     def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
@@ -103,27 +103,32 @@ class Patch2LatentMHA(nn.Module):
     
 
 class Layer(nn.Module):
-    def __init__(self, channels, hidden_channels, n_vectors, heads, bias=False, last=False):
+    def __init__(self, channels, n_embed, n_vectors, patches, heads, bias=False, last=False):
         super(Layer, self).__init__()
-        self.Img2Latent = Patch2LatentMHA(1, channels, channels, heads, bias=bias)
-        self.LatentSelfMHA = nn.MultiheadAttention(channels, heads, bias=False, batch_first=True)
-        self.PSwiGLU = ParallelSwiGLU(channels, hidden_channels, channels, n_vectors, bias=bias)
+        self.Img2Latent = nn.ModuleList([
+            Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
+             for p in patches])
+        self.LatentSelfMHA = nn.MultiheadAttention(n_embed, heads, bias=False, batch_first=True)
+        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
-                                    [nn.RMSNorm(channels)] * 3)
+                                    [nn.RMSNorm(n_embed)] * 3)
         
         self.last = last
         if not last:
-            self.Latent2Img = Latent2PatchMHA(1, channels, channels, heads, bias=bias)
-            self.CSwiGLU = ConvSwiGLU(channels, hidden_channels, channels, bias=bias)
+            self.Latent2Img = nn.ModuleList([
+                Latent2PatchMHA(p, channels, n_embed, heads, bias=bias)
+                for p in patches])
+            self.CSwiGLU = ConvSwiGLU(channels, channels, channels, bias=bias)
             self.normsI = nn.ModuleList([RMSNormTranspose(1, channels),
-                                        nn.RMSNorm(channels),
+                                        nn.RMSNorm(n_embed),
                                         RMSNormTranspose(1, channels)])
 
     def forward(self, x, z):
         # Imge Cross Attention from Image to Latent
         x_norm = self.normsL[0](x)
         z_norm = self.normsL[1](z)
-        z = z + self.Img2Latent(x_norm, z_norm)
+        for I2L in self.Img2Latent:
+            z = z + I2L(x_norm, z_norm)
 
         # Latent self attention
         z_norm = self.normsL[2](z)
@@ -137,7 +142,8 @@ class Layer(nn.Module):
             # Cross Attention from Latent to Image
             x_norm = self.normsI[0](x)
             z_norm = self.normsI[1](z)
-            x = x + self.Latent2Img(x_norm, z_norm)
+            for L2I in self.Latent2Img:
+                x = x + L2I(x_norm, z_norm)
 
             # Image Conv SwiGLU
             x_norm = self.normsI[2](x)
@@ -180,31 +186,30 @@ class LatentViT(nn.Module):
     def __init__(self, model_params):
         super(LatentViT, self).__init__()
         in_channels = model_params['in_channels']
-        # n_c = model_params['latent_channels']
-        n_embed = model_params['latent_dim']
+        n_channels = model_params['latent_channels']
+        vec_embed = model_params['latent_dim']
         n_vectors = model_params['n_latents']
-        # patches = model_params['patches']
+        patches = model_params['patches']
         out_channels = model_params['out_channels']
         num_layers = model_params['layers']
         heads = model_params['heads']
         dgrowth = model_params['dgrowth']
-        # bias = False
 
-        self.latents = nn.Parameter(torch.randn(1, n_vectors, n_embed))
-        self.dense_embed = DenseConvEmbedding(in_channels, n_embed, dgrowth)
-        self.in_norm = nn.Sequential(nn.Conv2d(n_embed, n_embed, 1, 1, 0, bias=False),
-                                     RMSNormTranspose(1, n_embed, elementwise_affine=False))
+        self.latents = nn.Parameter(torch.randn(1, n_vectors, vec_embed))
+        self.dense_embed = DenseConvEmbedding(in_channels, n_channels, dgrowth)
+        self.in_norm = nn.Sequential(nn.Conv2d(n_channels, n_channels, 1, 1, 0, bias=False),
+                                     RMSNormTranspose(1, n_channels, elementwise_affine=False))
 
         self.n_layers = num_layers
         self.layers = nn.ModuleList([
-            Layer(n_embed, n_embed, n_vectors, heads, last=(i == num_layers)) 
+            Layer(n_channels, vec_embed, n_vectors, patches, heads, last=(i == num_layers)) 
             for i in range(num_layers+1)
         ])
 
-        self.out_norm = nn.RMSNorm(n_embed, elementwise_affine=False)
-        out_embed = (out_channels // n_embed + 1)
+        self.out_norm = nn.RMSNorm(vec_embed, elementwise_affine=False)
+        out_embed = (out_channels // vec_embed + 1)
         out_embed = out_embed + out_embed % 2
-        self.out_lin = ParallelLinear(n_embed, out_embed, n_vectors, bias=False)
+        self.out_lin = ParallelLinear(vec_embed, out_embed, n_vectors, bias=False)
         self.out = nn.Sequential(nn.RMSNorm(out_embed*n_vectors, elementwise_affine=False),
                                    nn.Linear(out_embed*n_vectors, out_channels))
 
@@ -238,9 +243,9 @@ if __name__ == "__main__":
         'n_latents': 64,
         'patches': [4, 16],
         'out_channels': 1000,
-        'layers': 9,
+        'layers': 8,
         'heads': 8,
-        'dgrowth': 8              
+        'dgrowth': 8           
     }
 
     # Create random input tensor representing an image batch

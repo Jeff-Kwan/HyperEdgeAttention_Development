@@ -232,29 +232,28 @@ class LatentViT(nn.Module):
 
         z = z - self.latents
 
-        z = self.out_lin(self.out_norm(z).transpose(0,1)).transpose(0,1).reshape(x.shape[0], -1)
+        z = self.out_lin(self.out_norm(z)).reshape(x.shape[0], -1)
         y = self.out(z)
         return y
 
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    B, C, H, W = 8, 3, 224, 224
-    N, E = 128, 64
+    B, H, W = 4, 224, 224
 
     model = LatentViT({
-        'in_channels': C,
-        'latent_channels': 32,
-        'latent_dim': E,
-        'n_latents': N,
-        'patches': [4, 16],
+        'in_channels': 3,
+        'latent_channels': 64,
+        'latent_dim': 64,
+        'n_latents': 64,
+        'patches': [1],
         'out_channels': 1000,
-        'layers': 9,
+        'layers': 8,
         'heads': 8,
-        'dgrowth': 4
+        'dgrowth': 8
     }).to(device)
 
-    x = torch.randn(B, C, H, W).to(device)
+    x = torch.randn(B, 3, H, W).to(device)
 
 
     # Profile the forward and backward pass
