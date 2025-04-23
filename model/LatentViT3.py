@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from .ParallelLinear import ParallelLinear
+from ParallelLinear import ParallelLinear
 
 class RMSNormTranspose(nn.Module):
     def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
@@ -102,52 +102,48 @@ class Patch2LatentMHA(nn.Module):
         return y
     
 
-class ImgBlock(nn.Module):
-    def __init__(self, channels, hidden_channels, heads, bias=False):
-        super(ImgBlock, self).__init__()
-        # self.Latent2Img = nn.MultiheadAttention(channels, heads, bias=False, batch_first=True)
-        self.Latent2Img = Latent2PatchMHA(1, channels, channels, heads, bias=bias)
-        self.CSwiGLU = ConvSwiGLU(channels, hidden_channels, channels, bias=bias)
-        self.norms = nn.ModuleList([RMSNormTranspose(1, channels),
-                                    nn.RMSNorm(channels),
-                                    RMSNormTranspose(1, channels)])
-
-    def forward(self, x, z):
-        # Cross Attention from Latent to Image
-        x_norm = self.norms[0](x)#.view(x.shape[0], x.shape[1], -1).transpose(1, 2)
-        z_norm = self.norms[1](z)
-        x = x + self.Latent2Img(x_norm, z_norm)#, z_norm, need_weights=False)[0].transpose(1, 2).view(x.shape)
-
-        # Image Conv SwiGLU
-        x_norm = self.norms[2](x)
-        x = x + self.CSwiGLU(x_norm)
-        return x
-    
-
-class LatentBlock(nn.Module):
-    def __init__(self, channels, hidden_channels, n_vectors, heads, bias=False):
-        super(LatentBlock, self).__init__()
-        # self.Img2Latent = nn.MultiheadAttention(channels, heads, bias=False, batch_first=True)
+class Layer(nn.Module):
+    def __init__(self, channels, hidden_channels, n_vectors, heads, bias=False, last=False):
+        super(Layer, self).__init__()
         self.Img2Latent = Patch2LatentMHA(1, channels, channels, heads, bias=bias)
         self.LatentSelfMHA = nn.MultiheadAttention(channels, heads, bias=False, batch_first=True)
         self.PSwiGLU = ParallelSwiGLU(channels, hidden_channels, channels, n_vectors, bias=bias)
-        self.norms = nn.ModuleList([RMSNormTranspose(1, channels)] + 
+        self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(channels)] * 3)
+        
+        self.last = last
+        if not last:
+            self.Latent2Img = Latent2PatchMHA(1, channels, channels, heads, bias=bias)
+            self.CSwiGLU = ConvSwiGLU(channels, hidden_channels, channels, bias=bias)
+            self.normsI = nn.ModuleList([RMSNormTranspose(1, channels),
+                                        nn.RMSNorm(channels),
+                                        RMSNormTranspose(1, channels)])
 
     def forward(self, x, z):
         # Imge Cross Attention from Image to Latent
-        x_norm = self.norms[0](x)#.view(x.shape[0], x.shape[1], -1).transpose(1, 2)
-        z_norm = self.norms[1](z)
-        z = z + self.Img2Latent(x_norm, z_norm)#(z_norm, x_norm, x_norm, need_weights=False)[0]
+        x_norm = self.normsL[0](x)
+        z_norm = self.normsL[1](z)
+        z = z + self.Img2Latent(x_norm, z_norm)
 
         # Latent self attention
-        z_norm = self.norms[2](z)
+        z_norm = self.normsL[2](z)
         z = z + self.LatentSelfMHA(z_norm, z_norm, z_norm, need_weights=False)[0]
 
         # Latent Parallel SwiGLU
-        z_norm = self.norms[3](z)
+        z_norm = self.normsL[3](z)
         z = z + self.PSwiGLU(z_norm)
-        return z
+
+        if not self.last:
+            # Cross Attention from Latent to Image
+            x_norm = self.normsI[0](x)
+            z_norm = self.normsI[1](z)
+            x = x + self.Latent2Img(x_norm, z_norm)
+
+            # Image Conv SwiGLU
+            x_norm = self.normsI[2](x)
+            x = x + self.CSwiGLU(x_norm)
+
+        return x, z
 
 
 class DenseConvEmbedding(nn.Module):
@@ -200,13 +196,9 @@ class LatentViT(nn.Module):
                                      RMSNormTranspose(1, n_embed, elementwise_affine=False))
 
         self.n_layers = num_layers
-        self.latent_layers = nn.ModuleList([
-            LatentBlock(n_embed, n_embed, n_vectors, heads) 
-            for _ in range(num_layers+1)
-        ])
-        self.img_layers = nn.ModuleList([
-            ImgBlock(n_embed, n_embed, heads) 
-            for _ in range(num_layers)
+        self.layers = nn.ModuleList([
+            Layer(n_embed, n_embed, n_vectors, heads, last=(i == num_layers)) 
+            for i in range(num_layers+1)
         ])
 
         self.out_norm = nn.RMSNorm(n_embed, elementwise_affine=False)
@@ -223,14 +215,12 @@ class LatentViT(nn.Module):
         z = self.latents.expand(x.shape[0], -1, -1)
 
         # Dual Pathway ViT Blocks
-        for i in range(self.n_layers):
-            z = self.latent_layers[i](x, z)
-            x = self.img_layers[i](x, z)
-        z = self.latent_layers[-1](x, z)
+        for layer in self.layers:
+            x, z = layer(x, z)
         z = z - self.latents
         
         # Classifier Output
-        z = self.out_lin(self.out_norm(z).transpose(0, 1)).transpose(0, 1).reshape(x.shape[0], -1)
+        z = self.out_lin(self.out_norm(z)).reshape(x.shape[0], -1)
         y = self.out(z)
         return y
     

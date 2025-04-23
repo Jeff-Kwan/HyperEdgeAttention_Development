@@ -28,11 +28,11 @@ class ParallelLinear(nn.Module):
             nn.init.zeros_(self.bias)
 
     def forward(self, x):
-        '''Assume x is in form (N_parallel, Batch, Channels)'''
-        # y = torch.einsum('nbc,ncd->nbd', x, self.weight)
-        y = torch.matmul(x, self.weight)
+        '''Assume x is in form (Batch, N_parallel, Channels)'''
+        # y = torch.einsum('bnc,ncd->bnd', x, self.weight)
+        y = torch.matmul(x.transpose(0, 1), self.weight).transpose(0, 1)
         if self.bias is not None:
-            y = y + self.bias.unsqueeze(1)
+            y = y + self.bias.unsqueeze(0)
         return y
     
 
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Test ParallelLinear
     B, N, C = 64, 256, 128  # batch size, sequence length, channel features
 
-    x = torch.randn(N, B, C).to(device)
+    x = torch.randn(B, N, C).to(device)
     model = ParallelLinear(C, C, num_parallel=N).to(device)
 
     # Profile the forward pass
