@@ -143,9 +143,6 @@ class Layer(nn.Module):
         self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed*4, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(n_embed)] * 3)
-        # self.BiMHA = nn.ModuleList([
-        #     BidirectionalMHA(p, channels, n_embed, heads, bias=bias)
-        #      for p in patches])
         
         self.last = last
         if not last:
@@ -165,11 +162,12 @@ class Layer(nn.Module):
         # Image Cross Attention from Image to Latent
         x_norm = self.normsL[0](x)
         z_norm = self.normsL[1](z)
-        for i in range(len(self.Img2Latent)):
-            z = z + self.Img2Latent[i](x_norm, z_norm)
-            # Ax, Az = self.BiMHA[i](x_norm, z_norm)
-            # x = x + Ax
-            # z = z + Az
+        for I2L in self.Img2Latent:
+            z = z + I2L(x_norm, z_norm)
+
+        # Latent Parallel SwiGLU
+        z_norm = self.normsL[3](z)
+        z = z + self.PSwiGLU(z_norm)
 
         if not self.last:
             # Cross Attention from Latent to Image
@@ -182,11 +180,8 @@ class Layer(nn.Module):
             x_norm = self.normsI[2](x)
             x = x + self.CBlock(x_norm)
 
-        # Latent Parallel SwiGLU
-        z_norm = self.normsL[3](z)
-        z = z + self.PSwiGLU(z_norm)
-
         return x, z
+
 
 
 class ConvEmbedding(nn.Module):
