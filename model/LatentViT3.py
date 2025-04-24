@@ -109,7 +109,7 @@ class Layer(nn.Module):
             Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
              for p in patches])
         self.LatentSelfMHA = nn.MultiheadAttention(n_embed, heads, bias=False, batch_first=True)
-        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed, n_embed, n_vectors, bias=bias)
+        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed*4, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(n_embed)] * 3)
         
@@ -152,23 +152,13 @@ class Layer(nn.Module):
         return x, z
 
 
-class DenseConvEmbedding(nn.Module):
-    def __init__(self, in_channels, out_channels, growth, bias=True):
-        super(DenseConvEmbedding, self).__init__()
-        assert out_channels % growth == 0, "Output channels must be divisible by growth factor."
-        assert growth >= 8 and growth % 2 == 0, "Growth factor must be >= 8 and even."
-        self.layers = out_channels // growth
-        self.in_conv = nn.Sequential(
-            nn.Conv2d(in_channels, growth*2, 1, 1, 0, bias=bias),
-            nn.GroupNorm(4, growth*2))
-        self.convs = nn.ModuleList([
-            nn.Sequential(
-                nn.SiLU(),
-                nn.Conv2d(growth*i, growth, 3, 1, 1, bias=bias),
-                nn.GroupNorm(1, growth),
-            )
-            for i in range(1, self.layers)
-        ])
+class ConvEmbedding(nn.Module):
+    def __init__(self, in_channels, out_channels, bias=False):
+        super(ConvEmbedding, self).__init__()
+        self.in_conv = nn.Conv2d(in_channels, 16, 1, 1, 0, bias=bias)
+        self.mixnorm = nn.Sequential(
+            nn.Conv2d(16, out_channels, 1, 1, 0, bias=bias),
+            RMSNormTranspose(1, out_channels, elementwise_affine=False))
 
     def forward(self, x):
         # x shape: (Batch, in_channels, H, W)
@@ -176,9 +166,8 @@ class DenseConvEmbedding(nn.Module):
         with torch.no_grad():
             h_frac = torch.linspace(0, 1, x.shape[2], device=x.device, requires_grad=False).view(1, 1, -1, 1)
             w_frac = torch.linspace(0, 1, x.shape[3], device=x.device, requires_grad=False).view(1, 1, 1, -1)
-        x = torch.cat([x1*h_frac + x2*(1-h_frac), x3*w_frac + x4*(1-w_frac)], dim=1)
-        for conv in self.convs:
-            x = torch.cat([x, conv(x)], dim=1)
+        x = torch.cat([x1*h_frac, x2*(1-h_frac), x3*w_frac, x4*(1-w_frac)], dim=1)
+        x = self.mixnorm(x)
         return x
 
 
@@ -193,12 +182,9 @@ class LatentViT(nn.Module):
         out_channels = model_params['out_channels']
         num_layers = model_params['layers']
         heads = model_params['heads']
-        dgrowth = model_params['dgrowth']
 
-        self.latents = nn.Parameter(torch.randn(1, n_vectors, vec_embed))
-        self.dense_embed = DenseConvEmbedding(in_channels, n_channels, dgrowth)
-        self.in_norm = nn.Sequential(nn.Conv2d(n_channels, n_channels, 1, 1, 0, bias=False),
-                                     RMSNormTranspose(1, n_channels, elementwise_affine=False))
+        self.latents = nn.Parameter(torch.randn(n_vectors, vec_embed))
+        self.conv_embed = ConvEmbedding(in_channels, n_channels)
 
         self.n_layers = num_layers
         self.layers = nn.ModuleList([
@@ -215,8 +201,7 @@ class LatentViT(nn.Module):
 
     def forward(self, x):
         # Input Embedding
-        x = self.dense_embed(x)
-        x = self.in_norm(x)
+        x = self.conv_embed(x)
         z = self.latents.expand(x.shape[0], -1, -1)
 
         # Dual Pathway ViT Blocks
@@ -239,9 +224,9 @@ if __name__ == "__main__":
     model_params = {
         'in_channels': 3,
         'latent_channels': 64,
-        'latent_dim': 64,
-        'n_latents': 64,
-        'patches': [4, 16],
+        'latent_dim': 128,
+        'n_latents': 128,
+        'patches': [8],
         'out_channels': 1000,
         'layers': 8,
         'heads': 8,
