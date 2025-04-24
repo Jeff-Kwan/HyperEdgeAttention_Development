@@ -1,11 +1,11 @@
 {
     "in_channels": 3,
+    "init_patch": 2,
     "latent_channels": 32,
     "latent_dim": 64,
     "n_latents": 64,
-    "patches": [2],
+    "attn_patch": [4],
     "out_channels": 100,
     "layers": 4,
-    "heads": 4,
-    "dgrowth": 8
+    "heads": 4
 }

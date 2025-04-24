@@ -150,12 +150,12 @@ class Layer(nn.Module):
 
 
 class ConvEmbedding(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, init_patch):
         super(ConvEmbedding, self).__init__()
         assert out_channels % 4 == 0, "Embedding channels must be divisible by 4."
         self.in_conv = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=True)
         self.mixnorm = nn.Sequential(
-            nn.Conv2d(out_channels//2, out_channels, 1, 1, 0, bias=False),
+            nn.Conv2d(out_channels//2, out_channels, init_patch, init_patch, 0, bias=False),
             RMSNormTranspose(1, out_channels, elementwise_affine=False))
 
     def forward(self, x):
@@ -173,20 +173,21 @@ class LatentViT(nn.Module):
     def __init__(self, model_params):
         super(LatentViT, self).__init__()
         in_channels = model_params['in_channels']
+        init_patch = model_params['init_patch']
         n_channels = model_params['latent_channels']
         vec_embed = model_params['latent_dim']
         n_vectors = model_params['n_latents']
-        patches = model_params['patches']
+        attn_patch = [p // init_patch for p in model_params['attn_patch']]
         out_channels = model_params['out_channels']
         num_layers = model_params['layers']
         heads = model_params['heads']
 
         self.latents = nn.Parameter(torch.randn(n_vectors, vec_embed))
-        self.conv_embed = ConvEmbedding(in_channels, n_channels)
+        self.conv_embed = ConvEmbedding(in_channels, n_channels, init_patch)
 
         self.n_layers = num_layers
         self.layers = nn.ModuleList([
-            Layer(n_channels, vec_embed, n_vectors, patches, heads, last=(i == num_layers)) 
+            Layer(n_channels, vec_embed, n_vectors, attn_patch, heads, last=(i == num_layers)) 
             for i in range(num_layers+1)
         ])
 
@@ -218,17 +219,17 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Parameters for LatentViT
-    B, H, W = 4, 224, 224
+    B, H, W = 8, 224, 224
     model_params = {
         'in_channels': 3,
-        'latent_channels': 64,
-        'latent_dim': 128,
-        'n_latents': 128,
-        'patches': [8],
+        'init_patch': 4,
+        'latent_channels': 128,
+        'latent_dim': 256,
+        'n_latents': 256,
+        'attn_patch': [16],
         'out_channels': 1000,
         'layers': 8,
-        'heads': 8,
-        'dgrowth': 8           
+        'heads': 8,          
     }
 
     # Create random input tensor representing an image batch
