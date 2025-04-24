@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from .ParallelLinear import ParallelLinear
+# from .ParallelLinear import ParallelLinear
 
 class RMSNormTranspose(nn.Module):
     def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
@@ -191,12 +191,14 @@ class LatentViT(nn.Module):
             for i in range(num_layers+1)
         ])
 
-        self.out_norm = nn.RMSNorm(vec_embed, elementwise_affine=False)
-        out_embed = (out_channels // n_vectors + 1)
-        out_embed = out_embed + out_embed % 2
-        self.out_lin = ParallelLinear(vec_embed, out_embed, n_vectors, bias=False)
-        self.out = nn.Sequential(nn.RMSNorm(out_embed*n_vectors, elementwise_affine=False),
-                                   nn.Linear(out_embed*n_vectors, out_channels))
+        # self.out_norm = nn.RMSNorm(vec_embed, elementwise_affine=False)
+        # out_embed = (out_channels // n_vectors + 1)
+        # out_embed = out_embed + out_embed % 2
+        # self.out_lin = ParallelLinear(vec_embed, out_embed, n_vectors, bias=False)
+        # self.out = nn.Sequential(nn.RMSNorm(out_embed*n_vectors, elementwise_affine=False),
+        #                            nn.Linear(out_embed*n_vectors, out_channels))
+        self.out = nn.Sequential(nn.RMSNorm(vec_embed, elementwise_affine=False),
+                                   nn.Linear(vec_embed, out_channels))
 
     def forward(self, x):
         # Input Embedding
@@ -209,8 +211,8 @@ class LatentViT(nn.Module):
         z = z - self.latents
         
         # Classifier Output
-        z = self.out_lin(self.out_norm(z)).reshape(x.shape[0], -1)
-        y = self.out(z)
+        # z = self.out_lin(self.out_norm(z)).reshape(x.shape[0], -1)
+        y = self.out(torch.mean(z, dim=1))
         return y
     
 
