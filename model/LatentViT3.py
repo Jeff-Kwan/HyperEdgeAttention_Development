@@ -207,7 +207,7 @@ class LatentViT(nn.Module):
         ])
 
         self.out_norm = nn.RMSNorm(vec_embed, elementwise_affine=False)
-        out_embed = (out_channels // vec_embed + 1)
+        out_embed = (out_channels // n_vectors + 1)
         out_embed = out_embed + out_embed % 2
         self.out_lin = ParallelLinear(vec_embed, out_embed, n_vectors, bias=False)
         self.out = nn.Sequential(nn.RMSNorm(out_embed*n_vectors, elementwise_affine=False),
