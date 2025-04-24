@@ -99,52 +99,92 @@ class Patch2LatentMHA(nn.Module):
         return y
     
 
+class BidirectionalMHA(nn.Module):
+    def __init__(self, patch_size, in_c, vec_embed, heads, bias=False):
+        super(BidirectionalMHA, self).__init__()
+        assert vec_embed % heads == 0, "vec_embed must be divisible by heads."
+        self.heads = heads
+        self.head_dim = vec_embed // heads
+        self.vec_embed = vec_embed
+        self.patch_size = patch_size
+        self.ImgQKV = nn.Conv2d(in_c, vec_embed*3, patch_size, patch_size, 0, bias=bias)
+        self.ImgO = nn.ConvTranspose2d(vec_embed, in_c, patch_size, patch_size, 0, bias=bias)
+        self.LatQKV = nn.Linear(vec_embed, vec_embed*3, bias=bias)
+        self.LatO = nn.Linear(vec_embed, vec_embed, bias=bias)
+
+        for m in self.modules():
+            if hasattr(m, 'weight'):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='linear')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+    def forward(self, x, z):
+        # x shape: (Batch, Channels, H, W); z shape: (Batch, N, E)
+        B, _, H, W = x.shape; N = z.shape[1]
+        qx, kx, vx = self.ImgQKV(x).view(B, 3, self.heads, self.head_dim, -1).transpose(3, 4).unbind(dim=1)
+        qz, kz, vz = self.LatQKV(z).view(B, N, self.heads, self.head_dim, 3).transpose(1, 2).unbind(dim=-1)
+
+        qx, kx, vx, qz, kz, vz = map(lambda x: x.contiguous(), (qx, kx, vx, qz, kz, vz))
+        yx = F.scaled_dot_product_attention(qx, kz, vz)
+        yz = F.scaled_dot_product_attention(qz, kx, vx)
+
+        yx = self.ImgO(yx.transpose(2, 3).reshape(B, self.vec_embed, H//self.patch_size, W//self.patch_size))
+        yz = self.LatO(yz.transpose(2, 3).reshape(B, N, self.vec_embed))
+        return yx, yz
+
+
 class Layer(nn.Module):
     def __init__(self, channels, n_embed, n_vectors, patches, heads, bias=False, last=False):
         super(Layer, self).__init__()
-        self.Img2Latent = nn.ModuleList([
-            Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
-             for p in patches])
+        # self.Img2Latent = nn.ModuleList([
+        #     Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
+        #      for p in patches])
         self.LatentSelfMHA = nn.MultiheadAttention(n_embed, heads, bias=False, batch_first=True)
         self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed*4, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(n_embed)] * 3)
+        self.BiMHA = nn.ModuleList([
+            BidirectionalMHA(p, channels, n_embed, heads, bias=bias)
+             for p in patches])
         
         self.last = last
         if not last:
-            self.Latent2Img = nn.ModuleList([
-                Latent2PatchMHA(p, channels, n_embed, heads, bias=bias)
-                for p in patches])
+            # self.Latent2Img = nn.ModuleList([
+            #     Latent2PatchMHA(p, channels, n_embed, heads, bias=bias)
+            #     for p in patches])
             self.CBlock = ConvBlock(channels, channels, channels, bias=bias)
             self.normsI = nn.ModuleList([RMSNormTranspose(1, channels),
                                         nn.RMSNorm(n_embed),
                                         RMSNormTranspose(1, channels)])
 
-    def forward(self, x, z):
-        # Imge Cross Attention from Image to Latent
-        x_norm = self.normsL[0](x)
-        z_norm = self.normsL[1](z)
-        for I2L in self.Img2Latent:
-            z = z + I2L(x_norm, z_norm)
-
+    def forward(self, x, z):      
         # Latent self attention
         z_norm = self.normsL[2](z)
         z = z + self.LatentSelfMHA(z_norm, z_norm, z_norm, need_weights=False)[0]
 
-        # Latent Parallel SwiGLU
-        z_norm = self.normsL[3](z)
-        z = z + self.PSwiGLU(z_norm)
+        # Image Cross Attention from Image to Latent
+        x_norm = self.normsL[0](x)
+        z_norm = self.normsL[1](z)
+        for i in range(len(self.BiMHA)):
+            # z = z + self.Img2Latent[i](x_norm, z_norm)
+            Ax, Az = self.BiMHA[i](x_norm, z_norm)
+            x = x + Ax
+            z = z + Az
 
         if not self.last:
             # Cross Attention from Latent to Image
-            x_norm = self.normsI[0](x)
-            z_norm = self.normsI[1](z)
-            for L2I in self.Latent2Img:
-                x = x + L2I(x_norm, z_norm)
+            # x_norm = self.normsI[0](x)
+            # z_norm = self.normsI[1](z)
+            # for L2I in self.Latent2Img:
+            #     x = x + L2I(x_norm, z_norm)
 
             # Image Conv SwiGLU
             x_norm = self.normsI[2](x)
             x = x + self.CBlock(x_norm)
+
+        # Latent Parallel SwiGLU
+        z_norm = self.normsL[3](z)
+        z = z + self.PSwiGLU(z_norm)
 
         return x, z
 
@@ -184,6 +224,7 @@ class LatentViT(nn.Module):
 
         self.latents = nn.Parameter(torch.randn(n_vectors, vec_embed))
         self.conv_embed = ConvEmbedding(in_channels, n_channels, init_patch)
+        self.img2latKV = nn.Conv2d(n_channels, vec_embed, attn_patch[0], attn_patch[0], 0, bias=False)
 
         self.n_layers = num_layers
         self.layers = nn.ModuleList([
@@ -204,6 +245,10 @@ class LatentViT(nn.Module):
         # Input Embedding
         x = self.conv_embed(x)
         z = self.latents.expand(x.shape[0], -1, -1)
+        
+        # 1-head weighted sum to latents
+        kvx = self.img2latKV(x).view(x.shape[0], z.shape[1], -1).transpose(1, 2)
+        z = z + F.scaled_dot_product_attention(z, kvx, kvx)
 
         # Dual Pathway ViT Blocks
         for layer in self.layers:
