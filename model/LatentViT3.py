@@ -109,7 +109,7 @@ class Layer(nn.Module):
             Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
              for p in patches])
         self.LatentSelfMHA = nn.MultiheadAttention(n_embed, heads, bias=False, batch_first=True)
-        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed*4, n_embed, n_vectors, bias=bias)
+        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(n_embed)] * 3)
         
@@ -157,7 +157,7 @@ class ConvEmbedding(nn.Module):
         super(ConvEmbedding, self).__init__()
         self.in_conv = nn.Conv2d(in_channels, 16, 1, 1, 0, bias=bias)
         self.mixnorm = nn.Sequential(
-            nn.Conv2d(16, out_channels, 1, 1, 0, bias=bias),
+            nn.Conv2d(8, out_channels, 1, 1, 0, bias=bias),
             RMSNormTranspose(1, out_channels, elementwise_affine=False))
 
     def forward(self, x):
@@ -166,7 +166,7 @@ class ConvEmbedding(nn.Module):
         with torch.no_grad():
             h_frac = torch.linspace(0, 1, x.shape[2], device=x.device, requires_grad=False).view(1, 1, -1, 1)
             w_frac = torch.linspace(0, 1, x.shape[3], device=x.device, requires_grad=False).view(1, 1, 1, -1)
-        x = torch.cat([x1*h_frac, x2*(1-h_frac), x3*w_frac, x4*(1-w_frac)], dim=1)
+        x = torch.cat([x1*h_frac + x2*(1-h_frac), x3*w_frac + x4*(1-w_frac)], dim=1)
         x = self.mixnorm(x)
         return x
 
