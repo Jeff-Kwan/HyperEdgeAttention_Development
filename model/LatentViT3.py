@@ -153,11 +153,11 @@ class Layer(nn.Module):
 
 
 class ConvEmbedding(nn.Module):
-    def __init__(self, in_channels, out_channels, bias=False):
+    def __init__(self, in_channels, out_channels):
         super(ConvEmbedding, self).__init__()
-        self.in_conv = nn.Conv2d(in_channels, 16, 1, 1, 0, bias=bias)
+        self.in_conv = nn.Conv2d(in_channels, out_channels*2, 1, 1, 0, bias=True)
         self.mixnorm = nn.Sequential(
-            nn.Conv2d(8, out_channels, 1, 1, 0, bias=bias),
+            nn.Conv2d(out_channels, out_channels, 1, 1, 0, bias=False),
             RMSNormTranspose(1, out_channels, elementwise_affine=False))
 
     def forward(self, x):
