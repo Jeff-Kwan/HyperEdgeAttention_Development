@@ -27,18 +27,15 @@ class ParallelSwiGLU(nn.Module):
         return self.linear2(z1 * self.act(z2))
     
 
-class ConvSwiGLU(nn.Module):
+class ConvBlock(nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, bias=True):
-        super(ConvSwiGLU, self).__init__()
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, hidden_channels*2, 1, 1, 0, bias=bias),
-            nn.Conv2d(hidden_channels*2, hidden_channels*2, 3, 1, 1, groups=hidden_channels*2, bias=bias))
-        self.conv2 = nn.Conv2d(hidden_channels, out_channels, 1, 1, 0, bias=bias)
+        super(ConvBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, hidden_channels, 3, 1, 1,  bias=bias)
+        self.conv2 = nn.Conv2d(hidden_channels, out_channels, 3, 1, 1, bias=bias)
         self.act = nn.SiLU()
 
     def forward(self, x):
-        x1, x2 = self.conv1(x).chunk(2, dim=1)
-        return self.conv2(x1 * self.act(x2))
+        return self.conv2(self.act(self.conv1(x)))
 
 
 class Latent2PatchMHA(nn.Module):
@@ -109,7 +106,7 @@ class Layer(nn.Module):
             Patch2LatentMHA(p, channels, n_embed, heads, bias=bias)
              for p in patches])
         self.LatentSelfMHA = nn.MultiheadAttention(n_embed, heads, bias=False, batch_first=True)
-        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed, n_embed, n_vectors, bias=bias)
+        self.PSwiGLU = ParallelSwiGLU(n_embed, n_embed*4, n_embed, n_vectors, bias=bias)
         self.normsL = nn.ModuleList([RMSNormTranspose(1, channels)] + 
                                     [nn.RMSNorm(n_embed)] * 3)
         
@@ -118,7 +115,7 @@ class Layer(nn.Module):
             self.Latent2Img = nn.ModuleList([
                 Latent2PatchMHA(p, channels, n_embed, heads, bias=bias)
                 for p in patches])
-            self.CSwiGLU = ConvSwiGLU(channels, channels, channels, bias=bias)
+            self.CBlock = ConvBlock(channels, channels, channels, bias=bias)
             self.normsI = nn.ModuleList([RMSNormTranspose(1, channels),
                                         nn.RMSNorm(n_embed),
                                         RMSNormTranspose(1, channels)])
@@ -147,7 +144,7 @@ class Layer(nn.Module):
 
             # Image Conv SwiGLU
             x_norm = self.normsI[2](x)
-            x = x + self.CSwiGLU(x_norm)
+            x = x + self.CBlock(x_norm)
 
         return x, z
 
@@ -155,9 +152,10 @@ class Layer(nn.Module):
 class ConvEmbedding(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvEmbedding, self).__init__()
-        self.in_conv = nn.Conv2d(in_channels, out_channels*2, 1, 1, 0, bias=True)
+        assert out_channels % 4 == 0, "Embedding channels must be divisible by 4."
+        self.in_conv = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=True)
         self.mixnorm = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, 1, 1, 0, bias=False),
+            nn.Conv2d(out_channels//2, out_channels, 1, 1, 0, bias=False),
             RMSNormTranspose(1, out_channels, elementwise_affine=False))
 
     def forward(self, x):
