@@ -86,8 +86,10 @@ class Layer(nn.Module):
 
 
     def forward(self, x):      
-        # Parallel Blocks
-        x = x + self.ConvBlock(x) + self.CSwiGLU(x) + self.PatchMHA(x)
+        # Sequential Blocks
+        x = x + self.ConvBlock(x)
+        x = x + self.PatchMHA(x)
+        x = x + self.CSwiGLU(x)
         return x
 
 
