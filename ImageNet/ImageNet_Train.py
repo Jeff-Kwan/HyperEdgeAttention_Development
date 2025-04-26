@@ -199,7 +199,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=1,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -207,7 +207,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=2,
+        prefetch_factor=1,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
