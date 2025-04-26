@@ -219,7 +219,7 @@ def main():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        model = torch.compile(model, mode='max-autotune', options=compile_options)
+        model = torch.compile(model, options=compile_options)
 
     # To store metrics across epochs
     metrics = {
