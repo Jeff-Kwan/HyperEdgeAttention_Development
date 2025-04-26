@@ -171,7 +171,8 @@ def main():
     train_transforms = v2.Compose([
         v2.CenterCrop(img_size),
         v2.RandAugment(),
-        v2.ToTensor(),
+        v2.ToImage(), 
+        v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
         v2.RandomErasing(p=0.25),
@@ -179,7 +180,8 @@ def main():
 
     val_transforms = v2.Compose([
         v2.CenterCrop(img_size),
-        v2.ToTensor(),
+        v2.ToImage(), 
+        v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
     ])
