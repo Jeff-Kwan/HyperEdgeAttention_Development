@@ -23,7 +23,8 @@ from model.PatchViT4 import PatchViT
 # Custom Map-style Dataset for ImageNet1k (non-streaming)
 # -----------------------------------------------------------------------------
 class ImageNetDataset(Dataset):
-    def __init__(self, dataset, device, transform=None):
+    def __init__(self, dataset, device, transform=None, max_size=224):
+
         """
         Args:
             dataset: a Hugging Face map-style dataset (streaming=False)
@@ -32,6 +33,7 @@ class ImageNetDataset(Dataset):
         self.dataset = dataset
         self.device = device
         self.transform = transform
+        self.max_size = max_size
 
     def __len__(self):
         return len(self.dataset)
@@ -44,8 +46,9 @@ class ImageNetDataset(Dataset):
             image = image.convert('RGB')
 
         # Resize the image to at most 224x224 while maintaining aspect ratio
-        scale = max(image.size) / 224.0
-        image = image.resize((int(image.size[0]/scale), int(image.size[1]/scale)), 
+        image = image.resize((self.max_size, int(image.size[1] * self.max_size / image.size[0])) 
+                             if image.size[0] >= image.size[1] 
+                             else (int(image.size[0] * self.max_size / image.size[1]), self.max_size), 
                              resample=Image.LANCZOS)
         if self.transform:
             image = self.transform(image)
@@ -112,6 +115,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
 # -----------------------------------------------------------------------------
 def main():
     # Hyperparameters
+    img_size = 224
     epochs = 100
     batch_size = 1024
     learning_rate = 1e-3
@@ -120,7 +124,7 @@ def main():
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     flash = True
-    cpu_workers = min(max(1, mp.cpu_count()//2), 64)
+    cpu_workers = min(max(1, mp.cpu_count()//2), 32)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,9 +162,7 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = transforms.Compose([
-        # transforms.RandomResizedCrop(224),
-        # transforms.RandomHorizontalFlip(),
-        transforms.CenterCrop(224),
+        transforms.CenterCrop(img_size),
         transforms.RandAugment(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -168,16 +170,17 @@ def main():
     ])
 
     val_transforms = transforms.Compose([
-        # transforms.Resize(224),
-        transforms.CenterCrop(224),
+        transforms.CenterCrop(img_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
     ])
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
-    train_dataset = ImageNetDataset(train_dataset_raw, device, transform=train_transforms)
-    val_dataset = ImageNetDataset(val_dataset_raw, device, transform=val_transforms)
+    train_dataset = ImageNetDataset(train_dataset_raw, device, 
+                                    transform=train_transforms, max_size=img_size)
+    val_dataset = ImageNetDataset(val_dataset_raw, device, 
+                                  transform=val_transforms, max_size=img_size)
 
     # Create DataLoaders (using pin_memory for faster transfers when using CUDA)
     train_loader = DataLoader(
@@ -213,6 +216,7 @@ def main():
         if flash:
             assert autocast, "Flash Attention requires autocasting to bfloat16"
             torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_cudnn_sdp(False)
             torch.backends.cuda.enable_mem_efficient_sdp(False)
             torch.backends.cuda.enable_math_sdp(False)
 

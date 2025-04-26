@@ -3,7 +3,7 @@ import json
 
 from PatchViT4 import PatchViT
 import time
-import gc
+from torch.nn.attention import sdpa_kernel, SDPBackend
 
 
 def measure_performance(model, dummy_input, num_runs=100, autocast=False):
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     print("\nNow with autocast enabled")
     measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
-    print("\nNow with compilation enabled")
+    print("\nNow with compilation & cudnn optimizations enabled")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.allow_tf32 = True
@@ -85,19 +85,29 @@ if __name__ == "__main__":
     model = torch.compile(model)
     measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
-    # Clear everything and reinitialize the model
-    del model
-    torch.cuda.empty_cache()
-    gc.collect()
-    model = PatchViT(config).to(device)
+    # Attention backends
+
+    print("\nNow with Math attention and autocast")
+    with sdpa_kernel([SDPBackend.MATH]):
+        model = torch.compile(model)
+        measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
     print("\nNow with flash attention and autocast")
-    torch.backends.cuda.enable_flash_sdp(True)
-    torch.backends.cuda.enable_mem_efficient_sdp(False)
-    torch.backends.cuda.enable_math_sdp(False)
-    model = torch.compile(model)
-    measure_performance(model, dummy_input, num_runs=20, autocast=True)
+    with sdpa_kernel([SDPBackend.FLASH_ATTENTION]):
+        model = torch.compile(model)
+        measure_performance(model, dummy_input, num_runs=20, autocast=True)
+
+    print("\nNow with memory efficient attention and autocast")
+    with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+        model = torch.compile(model)
+        measure_performance(model, dummy_input, num_runs=20, autocast=True)
+
+    print("\nNow with CUDNN attention and autocast")
+    with sdpa_kernel([SDPBackend.CUDNN_ATTENTION]):
+        model = torch.compile(model)
+        measure_performance(model, dummy_input, num_runs=20, autocast=True)
 
     print("\nNow with channels last memory as well")
     dummy_input = dummy_input.to(memory_format=torch.channels_last).contiguous()
+    model = torch.compile(model)
     measure_performance(model, dummy_input, num_runs=20, autocast=True)
