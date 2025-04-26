@@ -9,7 +9,7 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
-from torchvision import transforms
+from torchvision.transforms import v2
 from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -63,7 +63,11 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
+    mixup = v2.MixUp(num_classes=1000)
     for data, target in pbar:
+        # Apply MixUp augmentation with 50% probability
+        if torch.rand(1).item() < 0.5:
+            data, target = mixup(data, target)
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         # data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
@@ -121,6 +125,7 @@ def main():
     batch_size = 1024
     learning_rate = 1e-3
     weight_decay = 1e-3
+    label_smoothing = 0.1
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
@@ -163,18 +168,19 @@ def main():
         cache_dir=os.path.join('data', 'hf_cache'))
     
     # Define Transform Pipelines for Training and Validation
-    train_transforms = transforms.Compose([
-        transforms.CenterCrop(img_size),
-        transforms.RandAugment(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    train_transforms = v2.Compose([
+        v2.CenterCrop(img_size),
+        v2.RandAugment(),
+        v2.ToTensor(),
+        v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
+        v2.RandomErasing(p=0.25),
     ])
 
-    val_transforms = transforms.Compose([
-        transforms.CenterCrop(img_size),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    val_transforms = v2.Compose([
+        v2.CenterCrop(img_size),
+        v2.ToTensor(),
+        v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
     ])
     
@@ -203,7 +209,7 @@ def main():
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
