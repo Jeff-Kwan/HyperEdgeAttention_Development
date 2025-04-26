@@ -2,9 +2,9 @@
     "in_channels": 3,
     "out_channels": 100,
     "init_pc": [1, 4],
-    "out_pc": [4, 128],
-    "convs": [[1, 8], [2, 32]],
+    "out_pc": [4, 64],
+    "convs": [[1, 8]],
     "attns": [[4, 64, 4]],
-    "mlps": [[4, 256]],
+    "mlps": [[2, 128]],
     "layers": 8
 }
