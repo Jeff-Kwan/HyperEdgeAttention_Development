@@ -16,12 +16,12 @@ class ConvBlock(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
         super(ConvBlock, self).__init__()
         self.convs = nn.Sequential(
-            nn.PixelUnshuffle(patch),
+            nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
             RMSNormTranspose(1, in_c*patch**2),
             nn.Conv2d(in_c*patch**2, h_c, 3, 1, 1, bias=bias),
             nn.SiLU(),
             nn.Conv2d(h_c, out_c*patch**2, 3, 1, 1, bias=bias),
-            nn.PixelShuffle(patch))
+            nn.PixelShuffle(patch) if patch > 1 else nn.Identity())
 
     def forward(self, x):
         return self.convs(x)
@@ -31,7 +31,7 @@ class CSwiGLU(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
         super(CSwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.PixelUnshuffle(patch),
+            nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
             RMSNormTranspose(1, in_c*patch**2),
             nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
             nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
@@ -52,7 +52,7 @@ class PatchMHA(nn.Module):
         self.h_c = h_c
         self.patch = patch
         self.QKV = nn.Sequential(
-            nn.PixelUnshuffle(patch),
+            nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
             RMSNormTranspose(1, in_c*patch**2),
             nn.Conv2d(in_c*patch**2, h_c*3, 1, 1, 0, bias=bias))
         self.O = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
