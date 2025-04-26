@@ -5,6 +5,7 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
+from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
@@ -64,7 +65,7 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        data = data.contiguous(memory_format=torch.channels_last)
+        # data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -123,7 +124,7 @@ def main():
     enable_compile = True
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
-    flash = True
+    sdpa_backends = [SDPBackend.FLASH_ATTENTION]
     cpu_workers = min(max(1, mp.cpu_count()//2), 32)
 
     # Device configuration
@@ -213,12 +214,6 @@ def main():
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
         model = torch.compile(model, mode='max-autotune')
-        if flash:
-            assert autocast, "Flash Attention requires autocasting to bfloat16"
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_cudnn_sdp(False)
-            torch.backends.cuda.enable_mem_efficient_sdp(False)
-            torch.backends.cuda.enable_math_sdp(False)
 
     # To store metrics across epochs
     metrics = {
@@ -230,8 +225,9 @@ def main():
 
     # Training loop
     for epoch in range(1, epochs + 1):
-        train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
-        val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
+        with sdpa_kernel(sdpa_backends):
+            train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
+            val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 
         metrics['train_loss'].append(train_loss)
