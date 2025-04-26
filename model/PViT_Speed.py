@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     print("\nNow with autocast enabled")
     measure_performance(model, dummy_input, num_runs=20, autocast=True)
-    exit()
+
     print("\nNow with compilation enabled")
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
