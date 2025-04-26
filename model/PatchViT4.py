@@ -176,11 +176,11 @@ if __name__ == "__main__":
     model_params = {
         'in_channels': 3,
         'out_channels': 1000,
-        'init_pc': [1, 4],
+        'init_pc': [2, 16],
         'out_pc': [32, 1024],
-        'convs': [[2, 32], [4, 64], [8, 128]],
-        'attns': [[16, 512, 16]],
-        'mlps': [[16, 1024]],
+        'convs': [[2, 16], [4, 32], [8, 64]],
+        'attns': [[16, 256, 8]],
+        'mlps': [[16, 512]],
         'layers': 8
     }
 
