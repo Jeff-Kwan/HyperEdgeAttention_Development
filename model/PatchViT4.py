@@ -36,7 +36,9 @@ class CSwiGLU(nn.Module):
             nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
             nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
         self.act = nn.SiLU()
-        self.conv2 = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(h_c, out_c*patch**2, 1, 1, 0, bias=bias),
+            nn.PixelShuffle(patch) if patch > 1 else nn.Identity())
 
     def forward(self, x):
         x1, x2 = self.conv1(x).chunk(2, dim=1)
@@ -55,7 +57,9 @@ class PatchMHA(nn.Module):
             nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
             RMSNormTranspose(1, in_c*patch**2),
             nn.Conv2d(in_c*patch**2, h_c*3, 1, 1, 0, bias=bias))
-        self.O = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
+        self.O = nn.Sequential(
+            nn.Conv2d(h_c, out_c*patch**2, 1, 1, 0, bias=bias),
+            nn.PixelShuffle(patch) if patch > 1 else nn.Identity())
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):

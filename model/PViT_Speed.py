@@ -63,7 +63,7 @@ def measure_performance(model, dummy_input, num_runs=100, autocast=False):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Create a dummy input tensor to measure inference time
-    dummy_input = torch.randn(32, 3, 224, 224).to(device)
+    dummy_input = torch.randn(256, 3, 224, 224).to(device)
 
     # Create an instance of the model
     config = json.load(open('model/configs/PViT4_Base.json'))
