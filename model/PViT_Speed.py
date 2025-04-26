@@ -9,8 +9,6 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 def measure_performance(model, dummy_input, num_runs=100, autocast=False):
     # Ensure model is on the same device as dummy_input and set it to eval mode
     device = dummy_input.device
-    model = model.to(device)
-    model.eval()
 
     # Warm up GPU (if applicable) to prevent startup overhead
     for _ in range(10):
@@ -45,7 +43,7 @@ def measure_performance(model, dummy_input, num_runs=100, autocast=False):
         avg_time = total_time / num_runs
         peak_vram = torch.cuda.max_memory_allocated(device) / (1024 ** 2)  # MB
 
-        print(f"Average inference time on CUDA: {avg_time:.2f} ms")
+        print(f"Average run time on CUDA: {avg_time:.2f} ms")
         print(f"Peak VRAM usage on CUDA: {peak_vram:.2f} MB")
         return avg_time, peak_vram
     else:
@@ -56,18 +54,19 @@ def measure_performance(model, dummy_input, num_runs=100, autocast=False):
 
         avg_time = (end_time - start_time) / num_runs * 1000  # Convert to milliseconds
 
-        print(f"Average inference time on CPU: {avg_time:.2f} ms")
+        print(f"Average run time on CPU: {avg_time:.2f} ms")
         return avg_time, None
 
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Create a dummy input tensor to measure inference time
-    dummy_input = torch.randn(256, 3, 224, 224).to(device)
+    # Create a dummy input tensor to measure run time
+    dummy_input = torch.randn(512, 3, 224, 224).to(device)
 
     # Create an instance of the model
     config = json.load(open('model/configs/PViT4_Base.json'))
-    model = PatchViT(config)
+    model = PatchViT(config).to(device)
+    model.train()
 
     # Measure the performance of the model
     print("Base Speed, no flash attention")
