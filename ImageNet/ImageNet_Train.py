@@ -65,8 +65,8 @@ def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     mixup = v2.MixUp(num_classes=1000)
     for data, target in pbar:
-        # Apply MixUp augmentation with 50% probability
-        if torch.rand(1).item() < 0.5:
+        # Apply MixUp augmentation with 25% probability
+        if torch.rand(1).item() < 0.25:
             data, target = mixup(data, target)
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         # data = data.contiguous(memory_format=torch.channels_last)
