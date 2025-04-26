@@ -59,11 +59,10 @@ class ImageNetDataset(Dataset):
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
+def train(model, device, train_loader, optimizer, criterion, epoch, mixup, autocast):
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
-    mixup = v2.MixUp(num_classes=1000)
     for data, target in pbar:
         # Apply MixUp augmentation with 25% probability
         if torch.rand(1).item() < 0.25:
@@ -169,14 +168,15 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
-        v2.CenterCrop(img_size),
-        v2.RandAugment(),
+        v2.RandomResizedCrop(img_size),
+        v2.RandomHorizontalFlip(),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
         v2.RandomErasing(p=0.25),
     ])
+    mixup = v2.MixUp(num_classes=1000)
 
     val_transforms = v2.Compose([
         v2.CenterCrop(img_size),
@@ -235,7 +235,7 @@ def main():
     # Training loop
     for epoch in range(1, epochs + 1):
         with sdpa_kernel(sdpa_backends):
-            train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
+            train_loss = train(model, device, train_loader, optimizer, criterion, epoch, mixup, autocast)
             val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 
