@@ -2,7 +2,7 @@
     "in_channels": 3,
     "out_channels": 100,
     "patches": [1, 2, 4],
-    "latent_channels": [8, 32, 64],
+    "latent_channels": [32, 64, 128],
     "heads": 4,
-    "layers": 8
+    "layers": 4
 }

@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.attention import flex_attention
+
 
 class RMSNormTranspose(nn.Module):
     def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
@@ -71,23 +73,66 @@ class PatchMHA(nn.Module):
         return y
 
 
+class SlidingWindowMHA(nn.Module):
+    def __init__(self, in_c, heads, window, bias=False):
+        super(SlidingWindowMHA, self).__init__()
+        self.channels = in_c
+        self.window = window
+        self.heads = heads
+        self.head_dim = in_c // heads
+        self.QKV = nn.Conv2d(in_c, in_c*3, 1, 1, 0, bias=bias)
+        self.O = nn.Conv2d(in_c, in_c, 1, 1, 0, bias=bias)
+        self.flex_attn = torch.compile(flex_attention.flex_attention)
+        self.W = None
+
+        for m in self.modules():
+            if hasattr(m, 'weight'):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='linear')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+                    
+    def SW_mask2D_score(self, score, b, h, q_idx, kv_idx):
+        q_x, q_y = q_idx // self.W, q_idx % self.W
+        kv_x, kv_y = kv_idx // self.W, kv_idx % self.W
+        return torch.where(
+            ((q_x - kv_x).abs() <= self.window) & ((q_y - kv_y).abs() <= self.window),
+            score,
+            float('-inf')
+        )
+
+    def forward(self, x):
+        B, _, H, W = x.shape
+        self.W = W          
+        q, k, v = self.QKV(x).view(B, 3, self.heads, self.head_dim, -1).transpose(3, 4).unbind(dim=1)
+
+        q, k, v = map(lambda x: x.contiguous(), (q, k, v))
+        y = self.flex_attn(q, k, v, score_mod=self.SW_mask2D_score)
+
+        y = self.O(y.transpose(2, 3).reshape(B, self.channels, H, W))
+        return y
+    
+
 class Layer(nn.Module):
     def __init__(self, channels, patches, heads, bias=False):
         super(Layer, self).__init__()
         self.ConvBlock = nn.Sequential(
             RMSNormTranspose(1, channels[1]),
             ConvBlock(patches[0], channels[1], channels[0], channels[1], bias=bias))
-        self.CSwiGLU = nn.Sequential(
+        self.LocalMHA = nn.Sequential(
             RMSNormTranspose(1, channels[1]),
-            CSwiGLU(channels[1], channels[1] * 4, channels[1], bias=bias))
+            SlidingWindowMHA(channels[1], heads, 4, bias=bias))
         self.PatchMHA = nn.Sequential(
             RMSNormTranspose(1, channels[1]),
             PatchMHA(patches[2], channels[1], channels[2], heads, bias=bias))
+        self.CSwiGLU = nn.Sequential(
+            RMSNormTranspose(1, channels[1]),
+            CSwiGLU(channels[1], channels[1] * 4, channels[1], bias=bias))
 
 
     def forward(self, x):      
         # Sequential Blocks
         x = x + self.ConvBlock(x)
+        x = x + self.LocalMHA(x)
         x = x + self.PatchMHA(x)
         x = x + self.CSwiGLU(x)
         return x
