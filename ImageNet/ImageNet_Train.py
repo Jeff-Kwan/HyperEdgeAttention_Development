@@ -113,14 +113,14 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     epochs = 100
-    batch_size = 256
+    batch_size = 1024
     learning_rate = 1e-3
     weight_decay = 1e-3
     enable_compile = True
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     flash = True
-    cpu_workers = min(max(1, mp.cpu_count() - 1), 64)
+    cpu_workers = min(max(1, mp.cpu_count()//2), 64)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -186,7 +186,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -194,7 +194,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=2,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
