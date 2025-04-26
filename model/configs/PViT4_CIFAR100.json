@@ -1,7 +1,7 @@
 {
     "in_channels": 3,
     "out_channels": 100,
-    "init_pc": [1, 4],
+    "init_pc": [1, 8],
     "out_pc": [4, 64],
     "convs": [[1, 8]],
     "attns": [[4, 64, 4]],
