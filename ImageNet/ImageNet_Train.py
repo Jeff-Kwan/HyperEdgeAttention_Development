@@ -65,8 +65,8 @@ def train(model, device, train_loader, optimizer, criterion, epoch, mixup, autoc
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
         # Apply MixUp augmentation with 25% probability
-        if torch.rand(1).item() < 0.25:
-            data, target = mixup(data, target)
+        # if torch.rand(1).item() < 0.25:
+        #     data, target = mixup(data, target)
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
         # data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
@@ -168,8 +168,8 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
-        v2.RandomResizedCrop(img_size),
-        v2.RandomHorizontalFlip(),
+        v2.CenterCrop(img_size),
+        v2.RandAugment(),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
