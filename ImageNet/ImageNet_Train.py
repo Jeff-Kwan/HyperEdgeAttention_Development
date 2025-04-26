@@ -126,7 +126,7 @@ def main():
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION]
-    cpu_workers = min(max(1, mp.cpu_count()//2), 32)
+    cpu_workers = min(max(1, mp.cpu_count()-2), 32)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -191,7 +191,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=1,
+        prefetch_factor=2,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -199,7 +199,7 @@ def main():
         num_workers=cpu_workers,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=1,
+        prefetch_factor=2,
     )
 
     # Set up loss function, optimizer, and learning rate scheduler
