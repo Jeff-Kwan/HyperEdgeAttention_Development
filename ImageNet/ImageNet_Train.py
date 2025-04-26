@@ -125,6 +125,12 @@ def main():
     autocast = True
     matmul_precision = 'medium' if autocast else 'high'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION]
+    compile_options = {
+        'max_autotune': True,
+        'epilogue_fusion': True,
+        'triton.cudagraphs': True,
+        'shape_padding': True,
+    }
     cpu_workers = min(max(1, mp.cpu_count()//2), 32)
 
     # Device configuration
@@ -213,7 +219,7 @@ def main():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision(matmul_precision)
-        model = torch.compile(model, mode='max-autotune')
+        model = torch.compile(model, mode='max-autotune', options=compile_options)
 
     # To store metrics across epochs
     metrics = {
