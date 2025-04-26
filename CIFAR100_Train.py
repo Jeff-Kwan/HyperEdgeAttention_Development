@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
-from model.PatchViT3 import PatchViT
+from model.PatchViT4 import PatchViT
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -97,7 +97,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the model configuration
-    config_path = os.path.join('model', 'configs', 'PViT_CIFAR100.json')
+    config_path = os.path.join('model', 'configs', 'PViT4_CIFAR100.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     

@@ -27,14 +27,13 @@ class ConvBlock(nn.Module):
         return self.convs(x)
     
 
-class CSwiGLU(nn.Module):
+class SwiGLU(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
-        super(CSwiGLU, self).__init__()
+        super(SwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
             nn.PixelUnshuffle(patch),
             RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
-            nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
+            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias))
         self.act = nn.SiLU()
         self.conv2 = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
 
@@ -44,18 +43,18 @@ class CSwiGLU(nn.Module):
 
 
 class PatchMHA(nn.Module):
-    def __init__(self, patch, in_c, patch_c, heads, bias=False):
+    def __init__(self, patch, in_c, h_c, out_c, heads, bias=False):
         super(PatchMHA, self).__init__()
-        assert patch_c % heads == 0, "patch_c must be divisible by heads."
+        assert h_c % heads == 0, "h_c must be divisible by heads."
         self.heads = heads
-        self.head_dim = patch_c // heads
-        self.patch_c = patch_c
+        self.head_dim = h_c // heads
+        self.h_c = h_c
         self.patch = patch
         self.QKV = nn.Sequential(
             nn.PixelUnshuffle(patch),
             RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, patch_c*3, 1, 1, 0, bias=bias))
-        self.O = nn.ConvTranspose2d(patch_c, in_c, patch, patch, 0, bias=bias)
+            nn.Conv2d(in_c*patch**2, h_c*3, 1, 1, 0, bias=bias))
+        self.O = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
 
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
@@ -71,23 +70,32 @@ class PatchMHA(nn.Module):
         q, k, v = map(lambda x: x.contiguous(), (q, k, v))
         y = F.scaled_dot_product_attention(q, k, v)
 
-        y = self.O(y.transpose(2, 3).reshape(B, self.patch_c, H//self.patch, W//self.patch))
+        y = self.O(y.transpose(2, 3).reshape(B, self.h_c, H//self.patch, W//self.patch))
         return y
 
 
 class Layer(nn.Module):
-    def __init__(self, channels, patches, heads, bias=False):
+    def __init__(self, in_c, convs, attns, mlps, bias=False):
         super(Layer, self).__init__()
-        self.ConvBlock = ConvBlock(channels[0], bias=bias)
-        self.CSwiGLU = CSwiGLU(patches[1], channels[0], channels[1] * 4, channels[0], bias=bias)
-        self.PatchMHA = PatchMHA(patches[2], channels[0], channels[2], heads, bias=bias)
+        self.ConvBlock = nn.ModuleList([
+            ConvBlock(p, in_c, c, in_c, bias=bias)
+            for p, c in convs])
+        self.PatchMHA = nn.ModuleList([
+            PatchMHA(p, in_c, c, in_c, h, bias=bias)
+            for p, c, h in attns])
+        self.SwiGLU = nn.ModuleList([
+            SwiGLU(p, in_c, c, in_c, bias=bias)
+            for p, c in mlps])
 
 
     def forward(self, x):      
         # Sequential Blocks
-        x = x + self.ConvBlock(x)
-        x = x + self.PatchMHA(x)
-        x = x + self.CSwiGLU(x)
+        for conv in self.ConvBlock:
+            x = x + conv(x)
+        for attn in self.PatchMHA:
+            x = x + attn(x)
+        for mlp in self.SwiGLU:
+            x = x + mlp(x)
         return x
 
 
@@ -119,28 +127,31 @@ class PatchViT(nn.Module):
     def __init__(self, model_params):
         super(PatchViT, self).__init__()
         in_channels = model_params['in_channels']
-        out_channels = model_params['out_channels']
-        patches = model_params['patches']
-        channels = model_params['latent_channels']
-        heads = model_params['heads']
+        classes = model_params['out_channels']
+        init_patch, init_channels = model_params['init_pc']
+        out_patch, out_channels = model_params['out_pc']
+        convs = model_params['convs']
+        attns = model_params['attns']
+        mlps = model_params['mlps']
         num_layers = model_params['layers']
 
-        assert type(patches) == list and len(patches)==3, "Patches must be a list of length 3."
-        assert type(channels) == list and len(channels)==3, "Channels must be a list of length 3."
-        patches[1] = patches[1]//patches[0]  # Sub-Token expansion ratio
-        patches[2] = patches[2]//patches[0]  # Patch Global MHA ratio
-        
+        convs = [[p // init_patch, c] for p, c in convs]
+        attns = [[p // init_patch, c, h] for p, c, h in attns]
+        mlps = [[p // init_patch, c] for p, c in mlps]
+        assert all(all(v > 0 for v in params) for params in convs), "All patch sizes and channel sizes in convs must be greater than 0."
+        assert all(all(v > 0 for v in params) for params in attns), "All patch sizes, channel sizes, and head counts in attns must be greater than 0."
+        assert all(all(v > 0 for v in params) for params in mlps), "All patch sizes and channel sizes in mlps must be greater than 0."
 
-        self.conv_embed = ConvEmbedding(in_channels, channels[0], patches[0])
+        self.conv_embed = ConvEmbedding(in_channels, init_channels, init_patch)
         self.layers = nn.ModuleList([
-            Layer(channels, patches, heads)
+            Layer(init_channels, convs, attns, mlps, bias=False)
             for _ in range(num_layers)])
         self.out = nn.Sequential(
-            nn.Conv2d(channels[0], max(channels), max(patches), max(patches), 0, bias=False),
+            nn.Conv2d(init_channels, out_channels, out_patch, out_patch, 0, bias=False),
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.RMSNorm(max(channels), elementwise_affine=False),
-            nn.Linear(max(channels), out_channels))
+            nn.RMSNorm(out_channels, elementwise_affine=False),
+            nn.Linear(out_channels, classes))
 
     def forward(self, x):
         # Input Embedding
@@ -164,9 +175,11 @@ if __name__ == "__main__":
     model_params = {
         'in_channels': 3,
         'out_channels': 1000,
-        'patches': [2, 8, 16],
-        'latent_channels': [32, 128, 512],
-        'heads': 8,
+        'init_pc': [1, 4],
+        'out_pc': [32, 1024],
+        'convs': [[2, 32], [4, 64]],
+        'attns': [[16, 1024, 8]],
+        'mlps': [[16, 1024]],
         'layers': 8
     }
 
