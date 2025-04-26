@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
-from model.PatchViT2 import PatchViT
+from model.PatchViT3 import PatchViT
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions

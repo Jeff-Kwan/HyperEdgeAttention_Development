@@ -16,6 +16,7 @@ class ConvBlock(nn.Module):
     def __init__(self, in_c, bias=True):
         super(ConvBlock, self).__init__()
         self.convs = nn.Sequential(
+            RMSNormTranspose(1, in_c),
             nn.Conv2d(in_c, in_c, 3, 1, 1, bias=bias),
             nn.SiLU(),
             nn.Conv2d(in_c, in_c, 3, 1, 1, bias=bias))
@@ -28,7 +29,9 @@ class CSwiGLU(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
         super(CSwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_c, h_c*2, patch, patch, 0, bias=bias),
+            nn.PixelUnshuffle(patch),
+            RMSNormTranspose(1, in_c*patch**2),
+            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
             nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
         self.act = nn.SiLU()
         self.conv2 = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
@@ -46,11 +49,14 @@ class PatchMHA(nn.Module):
         self.head_dim = patch_c // heads
         self.patch_c = patch_c
         self.patch = patch
-        self.QKV = nn.Conv2d(in_c, patch_c*3, patch, patch, 0, bias=bias)
+        self.QKV = nn.Sequential(
+            nn.PixelUnshuffle(patch),
+            RMSNormTranspose(1, in_c*patch**2),
+            nn.Conv2d(in_c*patch**2, patch_c*3, 1, 1, 0, bias=bias))
         self.O = nn.ConvTranspose2d(patch_c, in_c, patch, patch, 0, bias=bias)
 
         for m in self.modules():
-            if hasattr(m, 'weight'):
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
                 nn.init.kaiming_uniform_(m.weight, nonlinearity='linear')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
@@ -70,15 +76,9 @@ class PatchMHA(nn.Module):
 class Layer(nn.Module):
     def __init__(self, channels, patches, heads, bias=False):
         super(Layer, self).__init__()
-        self.ConvBlock = nn.Sequential(
-            RMSNormTranspose(1, channels[0]),
-            ConvBlock(channels[0], bias=bias))
-        self.CSwiGLU = nn.Sequential(
-            RMSNormTranspose(1, channels[0]),
-            CSwiGLU(patches[1], channels[0], channels[1] * 4, channels[0], bias=bias))
-        self.PatchMHA = nn.Sequential(
-            RMSNormTranspose(1, channels[0]),
-            PatchMHA(patches[2], channels[0], channels[2], heads, bias=bias))
+        self.ConvBlock = ConvBlock(channels[0], bias=bias)
+        self.CSwiGLU = CSwiGLU(patches[1], channels[0], channels[1] * 4, channels[0], bias=bias)
+        self.PatchMHA = PatchMHA(patches[2], channels[0], channels[2], heads, bias=bias)
 
 
     def forward(self, x):      
