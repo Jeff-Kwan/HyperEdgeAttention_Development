@@ -27,13 +27,14 @@ class ConvBlock(nn.Module):
         return self.convs(x)
     
 
-class SwiGLU(nn.Module):
+class CSwiGLU(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
-        super(SwiGLU, self).__init__()
+        super(CSwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
             nn.PixelUnshuffle(patch),
             RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias))
+            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
+            nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
         self.act = nn.SiLU()
         self.conv2 = nn.ConvTranspose2d(h_c, out_c, patch, patch, 0, bias=bias)
 
@@ -83,8 +84,8 @@ class Layer(nn.Module):
         self.PatchMHA = nn.ModuleList([
             PatchMHA(p, in_c, c, in_c, h, bias=bias)
             for p, c, h in attns])
-        self.SwiGLU = nn.ModuleList([
-            SwiGLU(p, in_c, c, in_c, bias=bias)
+        self.CSwiGLU = nn.ModuleList([
+            CSwiGLU(p, in_c, c, in_c, bias=bias)
             for p, c in mlps])
 
 
@@ -94,7 +95,7 @@ class Layer(nn.Module):
             x = x + conv(x)
         for attn in self.PatchMHA:
             x = x + attn(x)
-        for mlp in self.SwiGLU:
+        for mlp in self.CSwiGLU:
             x = x + mlp(x)
         return x
 
@@ -177,8 +178,8 @@ if __name__ == "__main__":
         'out_channels': 1000,
         'init_pc': [1, 4],
         'out_pc': [32, 1024],
-        'convs': [[2, 32], [4, 64]],
-        'attns': [[16, 1024, 8]],
+        'convs': [[2, 32], [4, 64], [8, 128]],
+        'attns': [[16, 512, 16]],
         'mlps': [[16, 1024]],
         'layers': 8
     }

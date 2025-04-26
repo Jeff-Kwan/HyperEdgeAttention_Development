@@ -9,13 +9,14 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from torchvision import transforms
+from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model import HAT_Classifier
+from model.PatchViT4 import PatchViT
 
 
 # -----------------------------------------------------------------------------
@@ -41,6 +42,11 @@ class ImageNetDataset(Dataset):
         # Convert grayscale images to RGB if needed
         if image.mode != 'RGB':
             image = image.convert('RGB')
+
+        # Resize the image to at most 224x224 while maintaining aspect ratio
+        scale = max(image.size) / 224.0
+        image = image.resize((int(image.size[0]/scale), int(image.size[1]/scale)), 
+                             resample=Image.LANCZOS)
         if self.transform:
             image = self.transform(image)
         return image, label
@@ -119,21 +125,21 @@ def main():
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load the configuration for HAT_Classifier (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'HAT_Base.json')
+    # Load the configuration for  Patch ViT (adjust path if needed)
+    config_path = os.path.join('model', 'configs', 'PViT4_Base.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
     # Initialize the model with configuration
-    model = HAT_Classifier(config).to(device)
+    model = PatchViT(config).to(device)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Initialized HAT - Size: {total_params/1e6:.2f} M')
+    print(f'Initialized PViT - Size: {total_params/1e6:.2f} M')
 
     # Create an output directory with timestamp
     now = datetime.now()
     timestamp = now.strftime("%H-%M")
     date_str = now.strftime("%Y-%m-%d")
-    output_dir = os.path.join('output', date_str, f'{timestamp}-HAT-ImageNet')
+    output_dir = os.path.join('output', date_str, f'{timestamp}-PViT-ImageNet')
     os.makedirs(output_dir, exist_ok=True)
 
     # -----------------------------------------------------------------------------
@@ -152,16 +158,17 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        # transforms.RandAugment(),
+        # transforms.RandomResizedCrop(224),
+        # transforms.RandomHorizontalFlip(),
+        transforms.CenterCrop(224),
+        transforms.RandAugment(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
     ])
 
     val_transforms = transforms.Compose([
-        transforms.Resize(224),
+        # transforms.Resize(224),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -228,7 +235,7 @@ def main():
         metrics['val_accuracy'].append(val_acc)
 
         # Save model checkpoint for this epoch
-        ckpt_path = os.path.join(output_dir, f'ImageNet_HATClassifier.tar')
+        ckpt_path = os.path.join(output_dir, f'ImageNet_PViT.tar')
         torch.save(model.state_dict(), ckpt_path)
 
         # Save metrics to JSON
