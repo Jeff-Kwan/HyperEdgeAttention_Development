@@ -1,0 +1,190 @@
+'''
+HyperEdge Attention Transformer (HAT??) - PyTorch
+'''
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+from .HyperEdgeAttentionVer6 import PhaseConv as HyperEdgeAttention
+
+
+class LayerNormTranspose(nn.Module):
+    def __init__(self, dim, features, eps=1e-6, elementwise_affine=True):
+        super(LayerNormTranspose, self).__init__()
+        self.dim = dim
+        self.norm = nn.LayerNorm(features, eps, elementwise_affine, elementwise_affine)
+
+    def forward(self, x):
+        return self.norm(x.transpose(self.dim, -1)).transpose(self.dim, -1)
+
+
+class CSwiGLU(nn.Module):
+    '''SiLU-Gated Convolutional Layer with InstanceNorm'''
+    def __init__(self, in_channels: int, hidden_channels: int,
+                 out_channels: int, bias=False):
+        super(CSwiGLU, self).__init__()
+        # self.conv1 = nn.Sequential(
+        #     nn.Conv2d(in_channels, hidden_channels, 1, 1, 0, bias=bias),
+        #     nn.Conv2d(hidden_channels, hidden_channels, 3, 1, 1, groups=hidden_channels, bias=bias))
+        # self.conv2 = nn.Sequential(
+        #     nn.Conv2d(in_channels, hidden_channels, 1, 1, 0, bias=bias),
+        #     nn.Conv2d(hidden_channels, hidden_channels, 3, 1, 1, groups=hidden_channels),
+        #     nn.SiLU())
+        # self.conv3 = nn.Sequential(
+        #     nn.Conv2d(hidden_channels, hidden_channels, 3, 1, 1, groups=out_channels, bias=bias),
+        #     nn.Conv2d(hidden_channels, out_channels, 1, 1, 0, bias=bias))
+        self.conv1 = nn.Conv2d(in_channels, hidden_channels, 1, 1, 0, bias=bias)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_channels, 1, 1, 0, bias=bias),
+            nn.SiLU())
+        self.conv3 = nn.Conv2d(hidden_channels, out_channels, 1, 1, 0, bias=bias)
+        
+        for m in self.modules():
+            if hasattr(m, 'bias') and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+    
+    def forward(self, x):
+        y = self.conv3(self.conv1(x) * self.conv2(x))
+        return y
+
+
+class Block(nn.Module):
+    '''Residual block with Linear Attention and SiLU-Gated Convolutional Layers'''
+    def __init__(self, in_channels, heads):
+        super(Block, self).__init__()
+        self.CS = CSwiGLU(in_channels, in_channels*4, in_channels, bias=False)
+        self.HA = HyperEdgeAttention(in_channels, heads)
+        self.norm1 = LayerNormTranspose(1, in_channels, elementwise_affine=False)
+        self.norm2 = LayerNormTranspose(1, in_channels)
+    
+    def forward(self, x):
+        x = x + self.HA(self.norm1(x))
+        x = x + self.CS(self.norm2(x))
+        return x
+
+    
+
+class HAT_Encoder(nn.Module):
+    '''Hypergraph Attention Transformer Encoder'''
+    def __init__(self, model_params):
+        super(HAT_Encoder, self).__init__()
+        in_channels = model_params['in_channels']
+        init_patch = model_params['init_patch']
+        channels = model_params['channels']
+        heads = model_params['heads']
+        edges = channels
+        depths = model_params['depths']
+        layers = len(channels) - 1
+        
+        # Modules
+        self.in_conv = nn.Conv2d(in_channels, channels[0], init_patch, stride=init_patch, padding=0, bias=None)
+        self.blocks = nn.ModuleList([
+            nn.Sequential(*[
+                Block(channels[i], heads[i])
+                for _ in range(depths[i])])
+            for i in range(layers)])
+        self.downsample = nn.ModuleList([nn.Sequential(
+            LayerNormTranspose(1, channels[i], elementwise_affine=False),
+            nn.Conv2d(channels[i], channels[i+1], 2, stride=2, padding=0, bias=None))
+            for i in range(layers)])
+        
+        self.bottleneck = nn.Sequential(*[Block(channels[-1], heads[-1]) for _ in range(depths[-1])])
+        
+        # Initizalizations
+        nn.init.kaiming_uniform_(self.in_conv.weight, nonlinearity='linear')
+        for d in self.downsample:
+            nn.init.kaiming_uniform_(d[1].weight, nonlinearity='linear')
+        
+    def forward(self, x):
+        # Patch Embedding
+        x = self.in_conv(x)
+
+        # Downsampling stage
+        for block_seq, down in zip(self.blocks, self.downsample):
+            x = block_seq(x)
+            x = down(x)
+
+        # Bottleneck
+        x = self.bottleneck(x)
+        return x
+
+
+
+class HAT_Classifier(nn.Module):
+    '''Hypergraph Attention Transformer'''
+    def __init__(self, model_params):
+        super(HAT_Classifier, self).__init__() 
+        in_channels = model_params['in_channels']
+        out_channels = model_params['out_channels']
+        init_patch = model_params['init_patch']
+        channels = model_params['channels']
+        heads = model_params['heads']
+        depths = model_params['depths']
+        layers = len(channels) - 1
+        assert len(depths) == layers+1, "Number of depths not equal to number of layers + 1."
+        assert len(heads) == layers+1, "Number of heads not equal to number of layers + 1."
+
+        self.encoder = HAT_Encoder(model_params)
+
+        # Classifier Prediction head
+        self.out = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.LayerNorm(channels[-1], elementwise_affine=False),
+            nn.Linear(channels[-1], out_channels, bias=False))
+        
+    def encode(self, x):
+        x = self.encoder(x)
+        return x
+        
+    def forward(self, x):
+        # Encoder
+        x = self.encoder(x)
+
+        # Classifier
+        x = self.out(x)
+        return x
+    
+
+if __name__ == '__main__':
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Example Image tensor
+    B, C, H, W = 1, 3, 224, 224
+    x = torch.randn(B, C, H, W, device=device)
+
+    model_params = {
+    "in_channels": 3,
+    "out_channels": 1000,
+    "init_patch": 4,
+    "channels": [64, 128, 256],
+    "heads": [4, 8, 16],
+    "depths": [4, 4, 4]
+    }
+    HAT = HAT_Classifier(model_params).to(device)
+    HAT.eval()
+
+    # Clear cache and reset memory stats
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(device)
+
+    # Profile memory usage
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CPU, 
+                    torch.profiler.ProfilerActivity.CUDA if torch.cuda.is_available() else None],
+        profile_memory=True,
+        record_shapes=True,
+        with_flops=True,
+    ) as prof:
+        output = HAT(x)
+        loss = output.sum()
+        loss.backward()
+
+    print(prof.key_averages().table(sort_by=f"{device}_time_total", row_limit=8))
+    if torch.cuda.is_available():
+        print(f"Max VRAM usage: {torch.cuda.max_memory_allocated(device) / 1048**2:.2f} MB")
+    print("Total trainable parameters:", round(sum(p.numel() for p in HAT.parameters() if p.requires_grad)/1e6, 2), 'M')
+    print("IO is size:", x.element_size() * x.nelement() / 1048 / 1048, 'MB')
+    print("I/O has elements: ", round(output.nelement() / 1e6, 2), 'M')
+

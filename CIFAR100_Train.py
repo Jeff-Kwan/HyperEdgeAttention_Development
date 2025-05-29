@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
-from model.PatchViT4 import PatchViT
+from model.HAT2 import HAT_Classifier
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -97,20 +97,20 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the model configuration
-    config_path = os.path.join('model', 'configs', 'PViT4_CIFAR100.json')
+    config_path = os.path.join('model', 'configs', 'HAT2_CIFAR100.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
     # Initialize the model with configuration
-    model = PatchViT(config).to(device)
+    model = HAT_Classifier(config).to(device)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Initialized PatchViT - Size: {total_params/1e6:.2f} M')
+    print(f'Initialized HAT - Size: {total_params/1e6:.2f} M')
 
     # Create an output directory with timestamp
     now = datetime.now()
     timestamp = now.strftime("%H-%M")
     date_str = now.strftime("%Y-%m-%d")
-    output_dir = os.path.join('output', date_str, f'{timestamp}-PViT-CIFAR100')
+    output_dir = os.path.join('output', date_str, f'{timestamp}-HAT-CIFAR100')
     os.makedirs(output_dir, exist_ok=True)
 
     # -----------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def main():
         metrics['val_accuracy'].append(val_acc)
 
         # Save model checkpoint for this epoch
-        ckpt_path = os.path.join(output_dir, f'CIFAR100_PViT.tar')
+        ckpt_path = os.path.join(output_dir, f'CIFAR100_HAT.tar')
         torch.save(model.state_dict(), ckpt_path)
 
         # Save metrics to JSON
