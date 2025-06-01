@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from model import SemanticViT
+from model.HAT2 import HAT_Classifier
 
 def test_model(model, device, test_loader, criterion):
     model.eval()
@@ -24,6 +24,7 @@ def test_model(model, device, test_loader, criterion):
             preds = output.argmax(dim=1)
             total_correct += (preds == target).sum().item()
             total_samples += data.size(0)
+            exit()
 
     avg_loss = total_loss / total_samples
     accuracy = 100. * total_correct / total_samples
@@ -32,8 +33,8 @@ def test_model(model, device, test_loader, criterion):
 
 def main(date, hrmin):
     # Settings
-    model_path = f'output/{date}/{hrmin}-HAT-CIFAR100/CIFAR100_HATClassifier.tar'
-    config_path = os.path.join('model', 'configs', 'SViT_CIFAR100.json')
+    model_path = f'output/{date}/{hrmin}-HAT-CIFAR100/CIFAR100_HAT.tar'
+    config_path = os.path.join('model', 'configs', 'HAT2_CIFAR100.json')
     batch_size = 128
     use_autocast = False  # If you used bfloat16 or float16 during training
 
@@ -43,7 +44,7 @@ def main(date, hrmin):
     # Load config and model
     with open(config_path, 'r') as f:
         config = json.load(f)
-    model = SemanticViT(config).to(device)
+    model = HAT_Classifier(config).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     print("Loaded trained model.")
@@ -66,6 +67,6 @@ def main(date, hrmin):
     test_model(model, device, test_loader, criterion)
 
 if __name__ == '__main__':
-    date = '2025-04-19'
-    hrmin = '12-00'
+    date = '2025-05-29'
+    hrmin = '20-48'
     main(date, hrmin)

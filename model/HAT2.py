@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .HyperEdgeAttentionVer6 import PhaseConv as HyperEdgeAttention
+from .HyperEdgeAttentionVer6 import HyperEdgeAttention
 
 
 class LayerNormTranspose(nn.Module):
@@ -53,7 +53,7 @@ class Block(nn.Module):
     def __init__(self, in_channels, heads):
         super(Block, self).__init__()
         self.CS = CSwiGLU(in_channels, in_channels*4, in_channels, bias=False)
-        self.HA = HyperEdgeAttention(in_channels, heads)
+        self.HA = HyperEdgeAttention(in_channels, in_channels, heads)
         self.norm1 = LayerNormTranspose(1, in_channels, elementwise_affine=False)
         self.norm2 = LayerNormTranspose(1, in_channels)
     
