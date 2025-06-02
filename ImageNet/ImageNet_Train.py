@@ -9,7 +9,7 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, default_collate
 from datasets import load_dataset
-from torchvision.transforms import v2, InterpolationMode
+from torchvision.transforms import v2
 from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -181,9 +181,8 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
         v2.Resize(img_size),
-        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1),
-                        interpolation=InterpolationMode.BILINEAR),
-        v2.TrivialAugmentWide(interpolation=InterpolationMode.BILINEAR),
+        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
