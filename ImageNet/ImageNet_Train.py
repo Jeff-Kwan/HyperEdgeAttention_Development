@@ -41,10 +41,14 @@ class ImageNetDataset(Dataset):
             assert isinstance(cutmix, float), "cutmix should be a float"
             self.cutmix = True
             self.apply_cutmix = v2.CutMix(alpha=cutmix, num_classes=1000)
+        else:
+            self.cutmix = False
         if mixup:
             assert isinstance(mixup, float), "mixup should be a float"
             self.mixup = True
             self.apply_mixup = v2.MixUp(alpha=mixup, num_classes=1000)
+        else:
+            self.mixup = False
 
     def __len__(self):
         return len(self.dataset)
