@@ -110,15 +110,11 @@ class DownSample(nn.Module):
     def __init__(self, in_c, out_c, patch=2):
         super(DownSample, self).__init__()
         self.patch = patch
-        self.linear = nn.Conv2d(in_c, out_c, patch, patch, 0, bias=False)
-        self.act = nn.Sequential(
-            nn.Conv2d(in_c, in_c, 3, 1, 1, bias=False),
-            nn.SiLU(),
-            nn.Conv2d(in_c, out_c, 3, patch, 1, bias=False))
-        self.norm = RMSNormTranspose(1, out_c)
+        self.conv = nn.Conv2d(in_c, out_c, patch, patch, 0, bias=False)
+        self.norm = RMSNormTranspose(1, out_c, elementwise_affine=False)
 
     def forward(self, x):
-        return self.norm(self.linear(x) + self.act(x))
+        return self.norm(self.conv(x))
 
 
 class CNNEmbedding(nn.Module):
