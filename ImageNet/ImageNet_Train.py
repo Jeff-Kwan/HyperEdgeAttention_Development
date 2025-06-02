@@ -117,7 +117,7 @@ def main():
     weight_decay = 1e-3
     label_smoothing = 0.1
     enable_compile = True
-    compile_mode = 'default'
+    compile_mode = 'max-autotune'
     autocast = True
     matmul_precision = 'medium'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
@@ -162,9 +162,10 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
         v2.Resize(img_size),
-        v2.RandomAffine(degrees=10, translate=(0.125, 0.125), scale=(0.8, 1.2)),
+        v2.RandomAffine(degrees=10, translate=(0.125, 0.125), scale=(0.8, 1.2),
+                        interpolation=InterpolationMode.BILINEAR),
         v2.CenterCrop(img_size),
-        v2.TrivialAugmentWide(),
+        v2.TrivialAugmentWide(interpolation=InterpolationMode.BILINEAR),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],

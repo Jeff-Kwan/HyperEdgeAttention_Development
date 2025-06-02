@@ -43,12 +43,12 @@ class HyperEdgeAttention(nn.Module):
 class ReshapeSelfMHA(nn.Module):
     def __init__(self, in_c, heads, bias=False):
         super(ReshapeSelfMHA, self).__init__()
-        self.in_norm = RMSNormTranspose(1, in_c)
+        self.in_norm = nn.RMSNorm(in_c)
         self.MHA = nn.MultiheadAttention(in_c, heads, bias=bias, batch_first=True)
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = self.in_norm(x).permute(0, 2, 3, 1).reshape(B, H*W, C)
+        x = self.in_norm(x.permute(0, 2, 3, 1).reshape(B, H*W, C))
         y = self.MHA(x, x, x, need_weights=False)[0]
         return y.permute(0, 2, 1).reshape(B, C, H, W)
 
