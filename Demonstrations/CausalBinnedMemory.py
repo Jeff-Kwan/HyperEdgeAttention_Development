@@ -19,7 +19,7 @@ class CausalBinnedAttention(nn.Module):
 
         # Create memory bins
         weights = self.bin_linear(x)
-        weights = F.relu(weights) * F.softmax(weights, dim=-1)
+        weights = F.relu(weights)**2 * F.softmax(weights, dim=-1)
         z = self.norm(torch.cumsum(weights.unsqueeze(-1) @ x.unsqueeze(-2), dim=1))
 
         # Apply MHA to each element with corresponding memory

@@ -12,6 +12,33 @@ class RMSNormTranspose(nn.Module):
         return self.norm(x.transpose(self.dim, -1)).transpose(self.dim, -1)
     
 
+class HyperEdgeAttention(nn.Module):
+    '''HyperEdge partitioning and attention.'''
+    def __init__(self, channels, edges, heads, bias=False):
+        super(HyperEdgeAttention, self).__init__()
+        assert channels%heads == 0, f"Channels {channels} not divisble by heads {heads}"
+        self.edges = edges
+        self.hyperedge = nn.Linear(channels, edges, bias=bias)
+        self.MHA = nn.MultiheadAttention(channels, heads, bias=bias, batch_first=True)
+        self.norm = nn.RMSNorm(channels)
+        
+
+    def forward(self, x):
+        # x: (batch_size, channels, height, width) as input
+        B, C, H, W = x.shape
+        x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
+
+        # "Classify" which edge it belongs to & linear weighting
+        weights = self.hyperedge(x)
+        weights = F.relu(weights) * F.softmax(weights, dim=-1) * (self.edges/H/W)
+        z = self.norm(weights.transpose(1, 2) @ x)
+
+        # Cross Attention with representative bins
+        y = self.MHA(x, z, z, need_weights=False)[0]
+
+        return y.permute(0, 2, 1).reshape(B, C, H, W)
+
+
 class ConvBlock(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
         super(ConvBlock, self).__init__()
@@ -45,39 +72,6 @@ class CSwiGLU(nn.Module):
         return self.conv2(self.act(x1) * x2)
 
 
-class PatchMHA(nn.Module):
-    def __init__(self, patch, in_c, h_c, out_c, heads, bias=False):
-        super(PatchMHA, self).__init__()
-        assert h_c % heads == 0, "h_c must be divisible by heads."
-        self.heads = heads
-        self.head_dim = h_c // heads
-        self.h_c = h_c
-        self.patch = patch
-        self.QKV = nn.Sequential(
-            nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
-            RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, h_c*3, 1, 1, 0, bias=bias))
-        self.O = nn.Sequential(
-            nn.Conv2d(h_c, out_c*patch**2, 1, 1, 0, bias=bias),
-            nn.PixelShuffle(patch) if patch > 1 else nn.Identity())
-
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_uniform_(m.weight, nonlinearity='linear')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-
-    def forward(self, x):
-        # x shape: (Batch, Channels, H, W)
-        B, _, H, W = x.shape
-        q, k, v = self.QKV(x).view(B, 3, self.heads, self.head_dim, -1).transpose(3, 4).unbind(dim=1)
-
-        q, k, v = map(lambda x: x.contiguous(), (q, k, v))
-        y = F.scaled_dot_product_attention(q, k, v)
-
-        y = self.O(y.transpose(2, 3).reshape(B, self.h_c, H//self.patch, W//self.patch))
-        return y
-
 
 class Layer(nn.Module):
     def __init__(self, in_c, convs, attns, mlps, bias=False):
@@ -86,7 +80,12 @@ class Layer(nn.Module):
             ConvBlock(p, in_c, c, in_c, bias=bias)
             for p, c in convs])
         self.PatchMHA = nn.ModuleList([
-            PatchMHA(p, in_c, c, in_c, h, bias=bias)
+            nn.Sequential(
+                nn.PixelUnshuffle(p) if p > 1 else nn.Identity(),
+                RMSNormTranspose(1, in_c*p**2),
+                HyperEdgeAttention(in_c*p**2, c, h, bias=bias),
+                nn.PixelShuffle(p) if p > 1 else nn.Identity()
+            )
             for p, c, h in attns])
         self.CSwiGLU = nn.ModuleList([
             CSwiGLU(p, in_c, c, in_c, bias=bias)

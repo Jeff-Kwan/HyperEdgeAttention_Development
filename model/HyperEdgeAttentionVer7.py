@@ -8,25 +8,36 @@ class HyperEdgeAttention(nn.Module):
         super(HyperEdgeAttention, self).__init__()
         assert channels%heads == 0, f"Channels {channels} not divisble by heads {heads}"
         self.edges = edges
-        self.hyperedge = nn.Linear(channels, edges, bias=bias)
-        self.MHA = nn.MultiheadAttention(channels, heads, bias=bias, batch_first=True)
-        self.norm = nn.RMSNorm(channels)
+        self.heads = heads
+        self.h_dim = channels // heads
+        self.hyperedge = nn.Conv2d(channels, edges*heads, 1, 1, 0, bias=bias)
+        self.QKV = nn.Conv2d(channels, channels*3, 1, 1, 0, bias=bias)
+        self.O = nn.Conv2d(channels, channels, 1, 1, 0, bias=bias)
+
+        nn.init.kaiming_uniform_(self.QKV.weight, nonlinearity='linear')
         
 
     def forward(self, x):
         # x: (batch_size, channels, height, width) as input
         B, C, H, W = x.shape
-        x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
 
-        # "Classify" which edge it belongs to & linear weighting
-        weights = self.hyperedge(x)
-        weights = F.relu(weights) * F.softmax(weights, dim=-1) * (self.edges/H/W)
-        z = self.norm(weights.transpose(1, 2) @ x)
+        # Compute Q, K, V
+        q, k, v = self.QKV(x).view(B, 3, self.heads, self.h_dim, H*W).unbind(1)
+        w = self.hyperedge(x).view(B, self.heads, self.edges, H*W)
+        w = F.relu(w) * F.softmax(w, dim=2) * (self.edges/H/W)
 
-        # Cross Attention with representative bins
-        y = self.MHA(x, z, z, need_weights=False)[0]
+        # Contraction of K, V
+        q = q.transpose(2, 3).contiguous()
+        zk = torch.einsum('bhdn,bhen->bhed', k, w).contiguous()
+        zv = torch.einsum('bhdn,bhen->bhed', v, w).contiguous()
 
-        return y.permute(0, 2, 1).reshape(B, C, H, W)
+        zk = zk / torch.sum(zk**2, dim=(1, 3), keepdim=True).clamp(min=1e-6).sqrt()
+        zv = zv / torch.sum(zv**2, dim=(1, 3), keepdim=True).clamp(min=1e-6).sqrt()
+
+        # SDPA
+        y = F.scaled_dot_product_attention(q, zk, zv)
+        y = self.O(y.permute(0, 2, 1, 3).reshape(B, C, H, W))
+        return y
 
 
 if __name__ == "__main__":
