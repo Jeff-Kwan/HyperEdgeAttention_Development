@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, default_collate
 from datasets import load_dataset
 from torchvision.transforms import v2, InterpolationMode
 from PIL import Image
@@ -20,11 +20,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from model.PatchViT6 import PatchViT
 
 
+
 # -----------------------------------------------------------------------------
 # Custom Map-style Dataset for ImageNet1k (non-streaming)
 # -----------------------------------------------------------------------------
+
 class ImageNetDataset(Dataset):
-    def __init__(self, dataset, device, transform=None, max_size=224):
+    def __init__(self, dataset, device, transform=None, max_size=224, cutmix=False, mixup=False):
 
         """
         Args:
@@ -35,6 +37,14 @@ class ImageNetDataset(Dataset):
         self.device = device
         self.transform = transform
         self.max_size = max_size
+        if cutmix:
+            assert isinstance(cutmix, float), "cutmix should be a float"
+            self.cutmix = True
+            self.apply_cutmix = v2.CutMix(alpha=cutmix, num_classes=1000)
+        if mixup:
+            assert isinstance(mixup, float), "mixup should be a float"
+            self.mixup = True
+            self.apply_mixup = v2.MixUp(alpha=mixup, num_classes=1000)
 
     def __len__(self):
         return len(self.dataset)
@@ -49,6 +59,13 @@ class ImageNetDataset(Dataset):
             image = self.transform(image)
         return image, label
     
+    def collate_fn(self, batch):
+        if self.cutmix:
+            return self.apply_cutmix(*default_collate(batch))
+        elif self.mixup:
+            return self.apply_mixup(*default_collate(batch))
+        else:
+            return default_collate(batch)
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -114,8 +131,10 @@ def main():
     epochs = 100
     batch_size = 512
     learning_rate = 3e-4
-    weight_decay = 1e-3
+    weight_decay = 1e-2
     label_smoothing = 0.1
+    cutmix = False
+    mixup = 0.2
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
@@ -162,6 +181,8 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
         v2.Resize(img_size),
+        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1),
+                        interpolation=InterpolationMode.BILINEAR),
         v2.TrivialAugmentWide(interpolation=InterpolationMode.BILINEAR),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
@@ -182,7 +203,8 @@ def main():
     
     # Wrap the datasets with our custom Map-style Dataset and proper transforms
     train_dataset = ImageNetDataset(train_dataset_raw, device, 
-                                    transform=train_transforms, max_size=img_size)
+                                    transform=train_transforms, max_size=img_size,
+                                    cutmix=cutmix, mixup=mixup)
     val_dataset = ImageNetDataset(val_dataset_raw, device, 
                                   transform=val_transforms, max_size=img_size)
 
