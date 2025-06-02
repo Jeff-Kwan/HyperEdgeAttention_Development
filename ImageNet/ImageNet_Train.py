@@ -9,7 +9,7 @@ from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
-from torchvision.transforms import v2
+from torchvision.transforms import v2, InterpolationMode
 from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.PatchViT5 import PatchViT
+from model.PatchViT6 import PatchViT
 
 
 # -----------------------------------------------------------------------------
@@ -112,7 +112,7 @@ def main():
     # Hyperparameters
     img_size = 256
     epochs = 100
-    batch_size = 1024
+    batch_size = 512
     learning_rate = 1e-3
     weight_decay = 1e-3
     label_smoothing = 0.1
@@ -129,7 +129,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the configuration for  Patch ViT (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'PViT5_ImageNet.json')
+    config_path = os.path.join('model', 'configs', 'PViT6_ImageNet.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -162,8 +162,10 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
         v2.Resize(img_size),
-        v2.TrivialAugmentWide(),
+        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.8, 1.2),
+                        interpolation=InterpolationMode.BILINEAR),
         v2.CenterCrop(img_size),
+        v2.TrivialAugmentWide(interpolation=InterpolationMode.BILINEAR),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
