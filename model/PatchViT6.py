@@ -58,9 +58,8 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
         assert h_c % 2 == 0, "h_c must be divisible by 2."
         self.in_conv = nn.Sequential(
-            nn.GroupNorm(1, in_c, affine=False),
-            nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias),
-            nn.Conv2d(h_c, h_c, 3, 1, 1, bias=bias, groups=h_c))
+            RMSNormTranspose(1, in_c),
+            nn.Conv2d(in_c, h_c, 3, 1, 1, bias=bias))
         self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias, groups=h_c//2)
         self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias, groups=h_c//2)
         self.out_proj = nn.Sequential(
@@ -69,7 +68,7 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         x1, x2 = self.in_conv(x).chunk(2, dim=1)
-        # Further 3x3 and dilated 3x3 paths
+        # Depthwise separated Further 3x3 and dilated 3x3 paths
         x = torch.cat([self.path1(x1), self.path2(x2)], dim=1)
         x = self.out_proj(x)
         return x
@@ -113,15 +112,10 @@ class DownSample(nn.Module):
         super(DownSample, self).__init__()
         self.patch = patch
         self.patchmerge = nn.Conv2d(in_c, out_c, patch, patch, 0, bias=False)
-        self.activated = nn.Sequential(
-            nn.GroupNorm(1, in_c, affine=False),
-            nn.Conv2d(in_c, in_c, 3, 1, 1, bias=False),
-            nn.SiLU(),
-            nn.Conv2d(in_c, out_c, 3, 2, 1, bias=False))
         self.norm = RMSNormTranspose(1, out_c, elementwise_affine=False)
 
     def forward(self, x):
-        return self.norm(self.patchmerge(x) + self.activated(x))
+        return self.norm(self.patchmerge(x))
 
 
 class CNNEmbedding(nn.Module):

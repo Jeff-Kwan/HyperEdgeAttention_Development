@@ -130,7 +130,7 @@ def main():
     img_size = 256
     epochs = 100
     batch_size = 512
-    learning_rate = 3e-4
+    learning_rate = 2e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
     cutmix = False
@@ -147,7 +147,7 @@ def main():
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load the configuration for  Patch ViT (adjust path if needed)
+    # Load the configuration for Patch ViT (adjust path if needed)
     config_path = os.path.join('model', 'configs', 'PViT6_ImageNet.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -189,7 +189,7 @@ def main():
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
-        v2.RandomErasing(p=0.2),
+        v2.RandomErasing(p=0.25),
     ])
 
     val_transforms = v2.Compose([
