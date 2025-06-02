@@ -104,6 +104,9 @@ def main(args):
         HyperEdgeAttention(C, args.edges, args.heads, bias=args.bias),
         ReshapeSelfAttention(C, args.heads, bias=args.bias),
     ]
+    if args.compile:
+        for i, m in enumerate(models):
+            models[i] = torch.compile(m)
 
     print(f"\nInput  : (B={B}, C={C}, H={H}, W={W}) on device={device}")
     print(f"Iter   : {args.iters}  | Backward = {args.backward}\n")
@@ -126,4 +129,5 @@ if __name__ == "__main__":
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
     parser.add_argument("--bias", action="store_true", help="include bias terms")
     parser.add_argument("--backward", action="store_true", help="include backward pass")
+    parser.add_argument("--compile", action="store_true", help="compile models with torch.compile")
     main(parser.parse_args())
