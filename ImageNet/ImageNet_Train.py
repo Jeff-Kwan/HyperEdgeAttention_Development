@@ -113,7 +113,7 @@ def main():
     img_size = 256
     epochs = 100
     batch_size = 512
-    learning_rate = 1e-3
+    learning_rate = 3e-4
     weight_decay = 1e-3
     label_smoothing = 0.1
     enable_compile = True
