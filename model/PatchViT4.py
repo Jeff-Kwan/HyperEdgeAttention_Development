@@ -176,16 +176,16 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Parameters for PatchViT
-    B, H, W = 8, 256, 256
+    B, H, W = 16, 224, 224
     model_params = {
-        'in_channels': 3,
-        'out_channels': 1000,
-        'init_pc': [4, 48],
-        'out_pc': [8, 512],
-        'convs': [[4, 64]],
-        'attns': [[4, 256, 8]],
-        'mlps': [[8, 512]],
-        'layers': 8
+        "in_channels": 3,
+        "out_channels": 1000,
+        "init_pc": [2, 16],
+        "out_pc": [32, 1024],
+        "convs": [[2, 16], [4, 32], [8, 64]],
+        "attns": [[16, 256, 8]],
+        "mlps": [[16, 512]],
+        "layers": 8
     }
 
     # Create random input tensor representing an image batch

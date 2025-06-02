@@ -104,7 +104,9 @@ def main(args):
         HyperEdgeAttention(C, args.edges, args.heads, bias=args.bias),
         ReshapeSelfAttention(C, args.heads, bias=args.bias),
     ]
+
     if args.compile:
+        print("Compiling models with torch.compile()...")
         for i, m in enumerate(models):
             models[i] = torch.compile(m)
 
@@ -127,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--edges", type=int, default=256, help="hyperedges")
     parser.add_argument("--iters", type=int, default=100, help="benchmark iterations")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
-    parser.add_argument("--bias", action="store_true", help="include bias terms")
-    parser.add_argument("--backward", action="store_true", help="include backward pass")
-    parser.add_argument("--compile", action="store_true", help="compile models with torch.compile")
+    parser.add_argument("--bias", default=False, help="include bias terms")
+    parser.add_argument("--backward", default=True, help="include backward pass")
+    parser.add_argument("--compile", default=True, help="compile models with torch.compile")
     main(parser.parse_args())

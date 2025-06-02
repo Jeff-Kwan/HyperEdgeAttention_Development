@@ -17,7 +17,7 @@ import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.PatchViT4 import PatchViT
+from model.PatchViT5 import PatchViT
 
 
 # -----------------------------------------------------------------------------
@@ -45,12 +45,6 @@ class ImageNetDataset(Dataset):
         # Convert grayscale images to RGB if needed
         if image.mode != 'RGB':
             image = image.convert('RGB')
-
-        # Resize the image to at most 224x224 while maintaining aspect ratio
-        image = image.resize((self.max_size, int(image.size[1] * self.max_size / image.size[0])) 
-                             if image.size[0] >= image.size[1] 
-                             else (int(image.size[0] * self.max_size / image.size[1]), self.max_size), 
-                             resample=Image.LANCZOS)
         if self.transform:
             image = self.transform(image)
         return image, label
@@ -59,16 +53,13 @@ class ImageNetDataset(Dataset):
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
 # -----------------------------------------------------------------------------
-def train(model, device, train_loader, optimizer, criterion, epoch, mixup, autocast):
+def train(model, device, train_loader, optimizer, criterion, epoch, autocast):
     model.train()
     total_loss = 0.0
     pbar = tqdm(train_loader, desc=f"Epoch {epoch} Training")
     for data, target in pbar:
-        # Apply MixUp augmentation with 25% probability
-        # if torch.rand(1).item() < 0.25:
-        #     data, target = mixup(data, target)
         data, target = data.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        # data = data.contiguous(memory_format=torch.channels_last)
+        data = data.contiguous(memory_format=torch.channels_last)
         optimizer.zero_grad(set_to_none=True)
         if autocast:
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -119,7 +110,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
 # -----------------------------------------------------------------------------
 def main():
     # Hyperparameters
-    img_size = 224
+    img_size = 256
     epochs = 100
     batch_size = 1024
     learning_rate = 1e-3
@@ -128,15 +119,17 @@ def main():
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
-    matmul_precision = 'medium' if autocast else 'high'
-    sdpa_backends = [SDPBackend.FLASH_ATTENTION]
+    matmul_precision = 'medium'
+    sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
+                     SDPBackend.CUDNN_ATTENTION,
+                     SDPBackend.EFFICIENT_ATTENTION]
     cpu_workers = min(max(1, mp.cpu_count()-1), 32)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the configuration for  Patch ViT (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'PViT4_Base.json')
+    config_path = os.path.join('model', 'configs', 'PViT5_ImageNet.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -168,17 +161,18 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
+        v2.Resize(img_size),
+        v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
-        v2.RandAugment(),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
-        v2.RandomErasing(p=0.25),
+        v2.RandomErasing(p=0.2),
     ])
-    mixup = v2.MixUp(num_classes=1000)
 
     val_transforms = v2.Compose([
+        v2.Resize(img_size),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
@@ -206,6 +200,7 @@ def main():
         batch_size=batch_size,
         num_workers=cpu_workers,
         pin_memory=True,
+        persistent_workers=False,
         prefetch_factor=2,
     )
 
@@ -234,7 +229,7 @@ def main():
     # Training loop
     for epoch in range(1, epochs + 1):
         with sdpa_kernel(sdpa_backends):
-            train_loss = train(model, device, train_loader, optimizer, criterion, epoch, mixup, autocast)
+            train_loss = train(model, device, train_loader, optimizer, criterion, epoch, autocast)
             val_loss, val_acc = validate_model(model, device, val_loader, criterion, autocast)
         scheduler.step()
 

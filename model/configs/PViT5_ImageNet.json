@@ -1,0 +1,10 @@
+{
+    "in_channels": 3,
+    "out_channels": 1000,
+    "init_pc": [4, 48],
+    "out_pc": [8, 192],
+    "convs": [4, 64],
+    "attns": [8, 192, 6],
+    "mlps": [8, 512],
+    "layers": 8
+}

@@ -14,17 +14,23 @@ class RMSNormTranspose(nn.Module):
 
 class HyperEdgeAttention(nn.Module):
     '''HyperEdge partitioning and attention.'''
-    def __init__(self, channels, edges, heads, bias=False):
+    def __init__(self, patch, in_c, edges, heads, bias=False):
         super(HyperEdgeAttention, self).__init__()
+        channels = in_c * patch**2
         assert channels%heads == 0, f"Channels {channels} not divisble by heads {heads}"
         self.edges = edges
+        self.in_norm = nn.Sequential(
+            nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
+            RMSNormTranspose(1, channels))
         self.hyperedge = nn.Linear(channels, edges, bias=bias)
         self.MHA = nn.MultiheadAttention(channels, heads, bias=bias, batch_first=True)
         self.norm = nn.RMSNorm(channels)
+        self.out = nn.PixelShuffle(patch) if patch > 1 else nn.Identity()
         
 
     def forward(self, x):
         # x: (batch_size, channels, height, width) as input
+        x = self.in_norm(x)
         B, C, H, W = x.shape
         x = x.permute(0, 2, 3, 1).reshape(B, H*W, C)
 
@@ -35,33 +41,41 @@ class HyperEdgeAttention(nn.Module):
 
         # Cross Attention with representative bins
         y = self.MHA(x, z, z, need_weights=False)[0]
+        y = self.out(y.permute(0, 2, 1).reshape(B, C, H, W))
+        return y
 
-        return y.permute(0, 2, 1).reshape(B, C, H, W)
 
 
 class ConvBlock(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
         super(ConvBlock, self).__init__()
-        self.convs = nn.Sequential(
+        assert h_c % 2 == 0, "h_c must be divisible by 2."
+        self.in_norm = nn.Sequential(
             nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
-            RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, h_c, 3, 1, 1, bias=bias),
+            RMSNormTranspose(1, in_c*patch**2))
+        self.convs = nn.ModuleList([
+            nn.Conv2d(in_c*patch**2, h_c//2, 3, 1, 1, bias=bias),
+            nn.Conv2d(in_c*patch**2, h_c//2, 3, 1, 2, dilation=2, bias=bias),
+        ])
+        self.out_proj = nn.Sequential(
             nn.SiLU(),
             nn.Conv2d(h_c, out_c*patch**2, 3, 1, 1, bias=bias),
             nn.PixelShuffle(patch) if patch > 1 else nn.Identity())
 
     def forward(self, x):
-        return self.convs(x)
+        x = self.in_norm(x)
+        x = torch.cat([conv(x) for conv in self.convs], dim=1)
+        x = self.out_proj(x)
+        return x
     
 
-class CSwiGLU(nn.Module):
+class SwiGLU(nn.Module):
     def __init__(self, patch, in_c, h_c, out_c, bias=True):
-        super(CSwiGLU, self).__init__()
+        super(SwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
             nn.PixelUnshuffle(patch) if patch > 1 else nn.Identity(),
             RMSNormTranspose(1, in_c*patch**2),
-            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias),
-            nn.Conv2d(h_c*2, h_c*2, 3, 1, 1, bias=bias, groups=h_c*2))
+            nn.Conv2d(in_c*patch**2, h_c*2, 1, 1, 0, bias=bias))
         self.act = nn.SiLU()
         self.conv2 = nn.Sequential(
             nn.Conv2d(h_c, out_c*patch**2, 1, 1, 0, bias=bias),
@@ -76,55 +90,53 @@ class CSwiGLU(nn.Module):
 class Layer(nn.Module):
     def __init__(self, in_c, convs, attns, mlps, bias=False):
         super(Layer, self).__init__()
-        self.ConvBlock = nn.ModuleList([
-            ConvBlock(p, in_c, c, in_c, bias=bias)
-            for p, c in convs])
-        self.PatchMHA = nn.ModuleList([
-            nn.Sequential(
-                nn.PixelUnshuffle(p) if p > 1 else nn.Identity(),
-                RMSNormTranspose(1, in_c*p**2),
-                HyperEdgeAttention(in_c*p**2, c, h, bias=bias),
-                nn.PixelShuffle(p) if p > 1 else nn.Identity()
-            )
-            for p, c, h in attns])
-        self.CSwiGLU = nn.ModuleList([
-            CSwiGLU(p, in_c, c, in_c, bias=bias)
-            for p, c in mlps])
+        self.ConvBlock = ConvBlock(convs[0], in_c, convs[1], in_c, bias=bias)
+        self.HyperEdgeAttn = HyperEdgeAttention(attns[0], in_c,
+                attns[1], attns[2], bias=bias)
+        self.SwiGLU = SwiGLU(mlps[0], in_c, mlps[1], in_c, bias=bias)
 
 
     def forward(self, x):      
         # Sequential Blocks
-        for conv in self.ConvBlock:
-            x = x + conv(x)
-        for attn in self.PatchMHA:
-            x = x + attn(x)
-        for mlp in self.CSwiGLU:
-            x = x + mlp(x)
+        x = x + self.ConvBlock(x)
+        x = x + self.HyperEdgeAttn(x)
+        x = x + self.SwiGLU(x)
         return x
 
 
 class ConvEmbedding(nn.Module):
     def __init__(self, in_channels, out_channels, init_patch):
-        super(ConvEmbedding, self).__init__()
-        self.embed= nn.Sequential(
-            nn.Conv2d(in_channels+4, out_channels, init_patch, init_patch, 0, bias=False),
-            RMSNormTranspose(1, out_channels, elementwise_affine=False))
+        super().__init__()
+        assert out_channels % 4 == 0, "out_channels must be divisible by 4 for 2-D sin-cos PE"
+        self.channels = out_channels
+        self.embed = nn.Conv2d(in_channels, out_channels,
+                               kernel_size=init_patch, stride=init_patch,
+                               padding=0, bias=False)
+        self.pos_embed = nn.Conv2d(out_channels, out_channels, 1, 1, 0, bias=False)
+        self.norm = RMSNormTranspose(1, out_channels, elementwise_affine=False)
+        self.register_buffer(
+            "radians",
+            2048 ** torch.linspace(0, 1, out_channels//4).view(-1, 1, 1)
+        )
+
+    @torch.no_grad()
+    def _build_2d_sincos(self, H: int, W: int, device):
+        y_embed = self.radians * torch.linspace(0, 1, H, device=device).view(1, H, 1)
+        x_embed = self.radians * torch.linspace(0, 1, W, device=device).view(1, 1, W)
+        pos = torch.cat([
+            torch.sin(y_embed).expand(1, -1, -1, W),
+            torch.cos(y_embed).expand(1, -1, -1, W),
+            torch.sin(x_embed).expand(1, -1, H, -1),
+            torch.cos(x_embed).expand(1, -1, H, -1)
+        ], dim=1)
+        return pos
 
     def forward(self, x):
-        # x shape: (Batch, in_channels, H, W)
-        with torch.no_grad():
-            B, _, H, W = x.shape
-            h_frac = torch.linspace(0, 1, H, device=x.device, requires_grad=False).view(-1, 1)
-            w_frac = torch.linspace(0, 1, W, device=x.device, requires_grad=False).view(1, -1)
-            pos = torch.stack([
-                h_frac.expand(-1, W),
-                (1-h_frac).expand(-1, W),
-                w_frac.expand(H, -1),
-                (1-w_frac).expand(H, -1)
-            ], dim=0).expand(B, -1, -1, -1)
-            x = torch.cat([x, pos], dim=1)
         x = self.embed(x)
+        pos = self._build_2d_sincos(x.size(2), x.size(3), x.device)
+        x = self.norm(x + self.pos_embed(pos))
         return x
+
 
 
 class PatchViT(nn.Module):
@@ -139,12 +151,9 @@ class PatchViT(nn.Module):
         mlps = model_params['mlps']
         num_layers = model_params['layers']
 
-        convs = [[p // init_patch, c] for p, c in convs]
-        attns = [[p // init_patch, c, h] for p, c, h in attns]
-        mlps = [[p // init_patch, c] for p, c in mlps]
-        assert all(all(v > 0 for v in params) for params in convs), "All patch sizes and channel sizes in convs must be greater than 0."
-        assert all(all(v > 0 for v in params) for params in attns), "All patch sizes, channel sizes, and head counts in attns must be greater than 0."
-        assert all(all(v > 0 for v in params) for params in mlps), "All patch sizes and channel sizes in mlps must be greater than 0."
+        convs[0] = convs[0] // init_patch
+        attns[0] = attns[0] // init_patch
+        mlps[0] = mlps[0] // init_patch
 
         self.conv_embed = ConvEmbedding(in_channels, init_channels, init_patch)
         self.layers = nn.ModuleList([
@@ -175,16 +184,16 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Parameters for PatchViT
-    B, H, W = 8, 256, 256
+    B, H, W = 16, 256, 256
     model_params = {
-        'in_channels': 3,
-        'out_channels': 1000,
-        'init_pc': [4, 48],
-        'out_pc': [8, 512],
-        'convs': [[4, 64]],
-        'attns': [[4, 256, 8]],
-        'mlps': [[8, 512]],
-        'layers': 8
+        "in_channels": 3,
+        "out_channels": 1000,
+        "init_pc": [4, 48],
+        "out_pc": [8, 192],
+        "convs": [4, 64],
+        "attns": [8, 192, 6],
+        "mlps": [8, 512],
+        "layers": 8
     }
 
     # Create random input tensor representing an image batch
@@ -203,8 +212,9 @@ if __name__ == "__main__":
         profile_memory=True,
         record_shapes=True
     ) as prof:
-        y = model(x)
-        loss = y.sum()
+        with torch.autocast('cuda', torch.bfloat16):
+            y = model(x)
+            loss = y.sum()
         loss.backward()
         
     print(prof.key_averages().table(sort_by=f"{device}_time_total", row_limit=12))
