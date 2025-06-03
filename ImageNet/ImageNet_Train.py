@@ -147,7 +147,7 @@ def main():
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
                      SDPBackend.CUDNN_ATTENTION,
                      SDPBackend.EFFICIENT_ATTENTION]
-    cpu_workers = min(max(1, mp.cpu_count()-1), 32)
+    cpu_workers = mp.cpu_count()
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -187,7 +187,6 @@ def main():
     train_transforms = v2.Compose([
         v2.RandomResizedCrop(img_size, scale=(0.6, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.RandomAffine(degrees=20, translate=(0.1, 0.1), shear=10),
         v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
