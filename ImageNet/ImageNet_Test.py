@@ -59,17 +59,13 @@ def evaluate_top1(model, device, test_loader, autocast):
             target = target.to(device, non_blocking=True)
             data = data.contiguous(memory_format=torch.channels_last)
 
-            if autocast:
-                with torch.autocast('cuda', dtype=torch.bfloat16):
-                    output = model(data)
-            else:
-                output = model(data)
+            output = model(data)
 
             batch_size = data.size(0)
             total_samples += batch_size
 
             # Top-1 predictions
-            pred = output.argmax(dim=1, keepdim=True)
+            pred = output.argmax(dim=-1, keepdim=True)
             correct_top1 += pred.eq(target.view_as(pred)).sum().item()
 
     top1_accuracy = 100.0 * correct_top1 / total_samples if total_samples > 0 else 0.0
@@ -156,27 +152,15 @@ def main():
     os.makedirs(hf_cache_dir, exist_ok=True)
     os.makedirs(imagenet_data_dir, exist_ok=True)
 
-    try:
-        test_dataset_raw = load_dataset(
-            'ILSVRC/imagenet-1k',
-            split='test',
-            trust_remote_code=True,
-            streaming=False,
-            data_dir=imagenet_data_dir,
-            cache_dir=hf_cache_dir
-        )
-        print("Loaded 'test' split of ImageNet1k.")
-    except ValueError:
-        # Fallback to using the validation split as the "test" set
-        test_dataset_raw = load_dataset(
-            'ILSVRC/imagenet-1k',
-            split='validation',
-            trust_remote_code=True,
-            streaming=False,
-            data_dir=imagenet_data_dir,
-            cache_dir=hf_cache_dir
-        )
-        print("'test' split not found. Loaded 'validation' split as test set.")
+    test_dataset_raw = load_dataset(
+        'ILSVRC/imagenet-1k',
+        split='test',
+        trust_remote_code=True,
+        streaming=False,
+        data_dir=imagenet_data_dir,
+        cache_dir=hf_cache_dir
+    )
+    print("Loaded 'test' split of ImageNet1k.")
 
     # --------------------------------------------------------------------------------
     # Wrap raw dataset with our custom ImageNetDataset and transforms
