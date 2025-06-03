@@ -128,7 +128,14 @@ def main():
 
     print(f'Loading checkpoint from: {checkpoint_path}')
     state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict)
+    raw = torch.load(checkpoint_path, map_location=device)
+    state_dict = raw.get('state_dict', raw)
+    # Strip the "_orig_mod." prefix from any key that has it
+    clean_state_dict = {
+        (k[len("_orig_mod."): ] if k.startswith("_orig_mod.") else k): v
+        for k, v in state_dict.items()
+    }
+    model.load_state_dict(clean_state_dict)
     print("Checkpoint loaded successfully.")
 
     # --------------------------------------------------------------------------------
