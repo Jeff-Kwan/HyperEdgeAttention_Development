@@ -10,14 +10,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, default_collate
 from datasets import load_dataset
 from torchvision.transforms import v2
-from PIL import Image
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 
 # Ensure the parent directory is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.PatchViT6 import PatchViT
+from model.PatchViT7 import PatchViT
 
 
 
@@ -132,28 +131,27 @@ def validate_model(model, device, val_loader, criterion, autocast):
 # -----------------------------------------------------------------------------
 def main():
     # Hyperparameters
-    img_size = 256
-    epochs = 90
+    img_size = 224
+    epochs = 100
     batch_size = 512
     learning_rate = 2e-4
-    weight_decay = 2e-2
+    weight_decay = 5e-2
     label_smoothing = 0.1
-    cutmix = 0.5
-    mixup = False
+    cutmix = 0.4
+    mixup = 0.5     # 0.5 * (1-0.4) = 0.3
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
     matmul_precision = 'medium'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
-                     SDPBackend.CUDNN_ATTENTION,
-                     SDPBackend.EFFICIENT_ATTENTION]
-    cpu_workers = 42
+                     SDPBackend.CUDNN_ATTENTION]
+    cpu_workers = 36
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load the configuration for Patch ViT (adjust path if needed)
-    config_path = os.path.join('model', 'configs', 'PViT6_ImageNet.json')
+    config_path = os.path.join('model', 'configs', 'PViT7_ImageNet.json')
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -187,7 +185,7 @@ def main():
     train_transforms = v2.Compose([
         v2.RandomResizedCrop(img_size, scale=(0.6, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.RandomAffine(degrees=20, translate=(0.1, 0.1), shear=10),
+        v2.RandomAffine(degrees=20, translate=(0.125, 0.125), shear=(-22.5, 22.5)),
         v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
@@ -225,7 +223,7 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
-        num_workers=cpu_workers,
+        num_workers=24,#cpu_workers,
         pin_memory=True,
         persistent_workers=False,
         prefetch_factor=2,
