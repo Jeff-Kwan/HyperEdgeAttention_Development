@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 # Ensure the parent directory is in the path so we can import PatchViT
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.PatchViT6 import PatchViT
+from model.PatchViT7 import PatchViT
 
 
 # -----------------------------------------------------------------------------
@@ -81,7 +81,7 @@ def main():
     # User-editable paths and hyperparameters
     # --------------------------------------------------------------------------------
     # Path to the JSON config for PatchViT (same as training)
-    config_path = os.path.join('model', 'configs', 'PViT6_ImageNet.json')
+    config_path = os.path.join('model', 'configs', 'PViT7_ImageNet.json')
 
     # Path to the trained checkpoint (.tar or .pth) produced by the training script
     checkpoint_path = os.path.join('output', '2025-06-03', '07-10-PViT-ImageNet', 'ImageNet_PViT.tar')
@@ -91,8 +91,8 @@ def main():
     imagenet_data_dir = os.path.join('data', 'imagenet')
 
     # Batch size for testing
-    batch_size = 512
-    img_size = 256
+    batch_size = 128
+    img_size = 224
     autocast = False
     cpu_workers = 32
     
