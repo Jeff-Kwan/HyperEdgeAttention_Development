@@ -140,7 +140,7 @@ def main():
     cutmix = 1.0
     mixup = False
     enable_compile = True
-    compile_mode = 'default'
+    compile_mode = 'max-autotune'
     autocast = True
     matmul_precision = 'medium'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
