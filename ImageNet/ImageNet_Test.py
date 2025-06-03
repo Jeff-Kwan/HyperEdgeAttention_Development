@@ -65,8 +65,8 @@ def evaluate_top1(model, device, test_loader, autocast):
             total_samples += batch_size
 
             # Top-1 predictions
-            pred = output.argmax(dim=-1, keepdim=True)
-            correct_top1 += pred.eq(target.view_as(pred)).sum().item()
+            pred = output.argmax(dim=-1)
+            correct_top1 += pred.eq(target).sum().item()
 
     top1_accuracy = 100.0 * correct_top1 / total_samples if total_samples > 0 else 0.0
     print(f'Test set: Top-1 Accuracy: {correct_top1}/{total_samples} ({top1_accuracy:.2f}%)')
