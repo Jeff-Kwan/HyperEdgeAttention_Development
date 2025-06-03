@@ -136,7 +136,7 @@ def main():
     epochs = 90
     batch_size = 512
     learning_rate = 2e-4
-    weight_decay = 2e-2
+    weight_decay = 1e-2
     label_smoothing = 0.1
     cutmix = 0.5
     mixup = False
