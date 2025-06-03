@@ -3,7 +3,6 @@ import sys
 import json
 
 import torch
-from torch.nn.attention import sdpa_kernel, SDPBackend
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from torchvision.transforms import v2
@@ -11,7 +10,7 @@ from tqdm import tqdm
 
 # Ensure the parent directory is in the path so we can import PatchViT
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model.PatchViT7 import PatchViT
+from model.PatchViT6 import PatchViT
 
 
 # -----------------------------------------------------------------------------
@@ -201,11 +200,7 @@ def main():
     # --------------------------------------------------------------------------------
     # Run evaluation to compute Top-1 accuracy
     # --------------------------------------------------------------------------------
-    # Use the FlashAttention/CuDNN backends if you want to replicate the same attention kernels.
-    sdpa_backends = [SDPBackend.FLASH_ATTENTION, SDPBackend.CUDNN_ATTENTION]
-
-    with sdpa_kernel(sdpa_backends):
-        top1_acc = evaluate_top1(model, device, test_loader, autocast)
+    top1_acc = evaluate_top1(model, device, test_loader, autocast)
 
     # Optionally: save results to a JSON or print more details
     print(f'Finished testing. Top-1 Accuracy: {top1_acc:.2f}%')
