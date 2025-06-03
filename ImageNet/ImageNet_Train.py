@@ -133,7 +133,7 @@ def main():
     # Hyperparameters
     img_size = 256
     epochs = 100
-    batch_size = 1024
+    batch_size = 512
     learning_rate = 1e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
