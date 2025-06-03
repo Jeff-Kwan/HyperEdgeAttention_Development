@@ -147,7 +147,7 @@ def main():
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
                      SDPBackend.CUDNN_ATTENTION,
                      SDPBackend.EFFICIENT_ATTENTION]
-    cpu_workers = mp.cpu_count()
+    cpu_workers = max(mp.cpu_count()-1, 48)
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
