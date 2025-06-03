@@ -136,7 +136,7 @@ def main():
     epochs = 90
     batch_size = 512
     learning_rate = 2e-4
-    weight_decay = 1e-2
+    weight_decay = 2e-2
     label_smoothing = 0.1
     cutmix = 0.5
     mixup = False
@@ -187,7 +187,7 @@ def main():
     train_transforms = v2.Compose([
         v2.RandomResizedCrop(img_size, scale=(0.6, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.RandomAffine(degrees=15, translate=(0.1, 0.1), shear=10),
+        v2.RandomAffine(degrees=20, translate=(0.1, 0.1), shear=10),
         v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
