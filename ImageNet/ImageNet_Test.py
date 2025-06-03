@@ -154,13 +154,13 @@ def main():
 
     test_dataset_raw = load_dataset(
         'ILSVRC/imagenet-1k',
-        split='test',
+        split='validation', # test labels are all -1
         trust_remote_code=True,
         streaming=False,
         data_dir=imagenet_data_dir,
         cache_dir=hf_cache_dir
     )
-    print("Loaded 'test' split of ImageNet1k.")
+    print("Loaded 'validation' split of ImageNet1k.")
 
     # --------------------------------------------------------------------------------
     # Wrap raw dataset with our custom ImageNetDataset and transforms
