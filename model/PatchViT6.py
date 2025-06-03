@@ -59,7 +59,8 @@ class ConvBlock(nn.Module):
         assert h_c % 2 == 0, "h_c must be divisible by 2."
         self.in_conv = nn.Sequential(
             RMSNormTranspose(1, in_c),
-            nn.Conv2d(in_c, h_c, 3, 1, 1, bias=bias))
+            nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias),
+            nn.Conv2d(h_c, h_c, 3, 1, 1, bias=bias, groups=h_c))
         self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias, groups=h_c//2)
         self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias, groups=h_c//2)
         self.out_proj = nn.Sequential(
@@ -113,6 +114,7 @@ class DownSample(nn.Module):
         self.patch = patch
         self.patchmerge = nn.Conv2d(in_c, out_c, patch, patch, 0, bias=False)
         self.norm = RMSNormTranspose(1, out_c, elementwise_affine=False)
+        nn.init.kaiming_normal_(self.patchmerge.weight, nonlinearity='linear')
 
     def forward(self, x):
         return self.norm(self.patchmerge(x))
@@ -222,8 +224,8 @@ if __name__ == "__main__":
         "out_channels": 1000,
         "channels": [64, 128, 256, 512],
         "convs": [64, 128, 256, 512],
-        "attns": [[256, 4], [256, 4], 8, 8],
-        "mlps": [256, 512, 1024, 2048],
+        "attns": [[128, 4], [128, 4], 8, 16],
+        "mlps": [128, 256, 512, 1024],
         "layers": [2, 2, 2, 2]
     }
 

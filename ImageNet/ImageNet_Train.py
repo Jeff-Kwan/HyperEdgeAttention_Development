@@ -133,14 +133,14 @@ def main():
     # Hyperparameters
     img_size = 256
     epochs = 100
-    batch_size = 512
-    learning_rate = 2e-4
+    batch_size = 1024
+    learning_rate = 1e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
     cutmix = False
-    mixup = 0.2
+    mixup = False
     enable_compile = True
-    compile_mode = 'max-autotune'
+    compile_mode = 'default'
     autocast = True
     matmul_precision = 'medium'
     sdpa_backends = [SDPBackend.FLASH_ATTENTION, 
@@ -185,8 +185,8 @@ def main():
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
         v2.Resize(img_size),
-        v2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         v2.TrivialAugmentWide(),
+        v2.TrivialAugmentWide(),    # 2x Trivial Augment
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
