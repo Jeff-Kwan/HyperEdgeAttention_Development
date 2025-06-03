@@ -86,10 +86,10 @@ def main():
     # User-editable paths and hyperparameters
     # --------------------------------------------------------------------------------
     # Path to the JSON config for PatchViT (same as training)
-    config_path = os.path.join('model', 'configs', 'PViT7_ImageNet.json')
+    config_path = os.path.join('model', 'configs', 'PViT6_ImageNet.json')
 
     # Path to the trained checkpoint (.tar or .pth) produced by the training script
-    checkpoint_path = os.path.join('output', 'YOUR_DATE', 'YOUR_TIMESTAMP-PViT-ImageNet', 'ImageNet_PViT.tar')
+    checkpoint_path = os.path.join('output', '2025-06-03', '07-10-PViT-ImageNet', 'ImageNet_PViT.tar')
 
     # Directory to cache/download ImageNet data
     hf_cache_dir = os.path.join('data', 'hf_cache')
@@ -97,13 +97,10 @@ def main():
 
     # Batch size for testing
     batch_size = 512
-    img_size = 224
-
-    # Number of CPU workers for DataLoader
+    img_size = 256
+    autocast = False
     cpu_workers = 32
-
-    # Whether to use automatic mixed precision during inference
-    autocast = True
+    
 
     # --------------------------------------------------------------------------------
     # Device configuration

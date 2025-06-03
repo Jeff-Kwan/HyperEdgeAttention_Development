@@ -132,7 +132,7 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     img_size = 224
-    epochs = 100
+    epochs = 120
     batch_size = 512
     learning_rate = 2e-4
     weight_decay = 5e-2
@@ -183,9 +183,9 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
-        v2.RandomResizedCrop(img_size, scale=(0.6, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.RandomAffine(degrees=20, translate=(0.125, 0.125), shear=(-22.5, 22.5)),
+        v2.RandomResizedCrop(img_size, scale=(0.5, 1.0), ratio=(3/4, 4/3)),
+        v2.RandomAffine(degrees=20, translate=(0.125, 0.125), shear=(-20, 20)),
         v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
