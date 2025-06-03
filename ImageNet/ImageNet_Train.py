@@ -131,10 +131,10 @@ def validate_model(model, device, val_loader, criterion, autocast):
 # -----------------------------------------------------------------------------
 def main():
     # Hyperparameters
-    img_size = 224
-    epochs = 120
+    img_size = 256
+    epochs = 150
     batch_size = 512
-    learning_rate = 2e-4
+    learning_rate = 1e-4
     weight_decay = 5e-2
     label_smoothing = 0.1
     cutmix = 0.4
