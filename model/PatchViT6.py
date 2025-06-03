@@ -59,7 +59,7 @@ class ConvBlock(nn.Module):
         assert h_c % 2 == 0, "h_c must be divisible by 2."
         self.in_conv = nn.Sequential(
             RMSNormTranspose(1, in_c),
-            nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias))
+            nn.Conv2d(in_c, h_c, 3, 1, 1, bias=bias))
         self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias)
         self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias)
         self.out_proj = nn.Sequential(
