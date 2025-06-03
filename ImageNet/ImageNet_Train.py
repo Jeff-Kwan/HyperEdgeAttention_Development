@@ -133,13 +133,13 @@ def validate_model(model, device, val_loader, criterion, autocast):
 def main():
     # Hyperparameters
     img_size = 256
-    epochs = 100
+    epochs = 90
     batch_size = 512
-    learning_rate = 1e-4
+    learning_rate = 2e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
-    cutmix = 0.3
-    mixup = False
+    cutmix = False
+    mixup = 0.5
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
@@ -187,13 +187,13 @@ def main():
     train_transforms = v2.Compose([
         v2.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.TrivialAugmentWide(),
+        v2.RandAugment(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406],
                             std=[0.229, 0.224, 0.225]),
-        v2.RandomErasing(p=0.25),
+        v2.RandomErasing(p=0.5),
     ])
 
     val_transforms = v2.Compose([
