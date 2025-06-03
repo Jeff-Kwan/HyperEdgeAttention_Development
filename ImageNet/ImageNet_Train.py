@@ -137,7 +137,7 @@ def main():
     learning_rate = 1e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
-    cutmix = False
+    cutmix = 1.0
     mixup = False
     enable_compile = True
     compile_mode = 'default'
@@ -186,7 +186,6 @@ def main():
     train_transforms = v2.Compose([
         v2.Resize(img_size),
         v2.TrivialAugmentWide(),
-        v2.TrivialAugmentWide(),    # 2x Trivial Augment
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
