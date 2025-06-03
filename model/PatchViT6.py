@@ -59,8 +59,7 @@ class ConvBlock(nn.Module):
         assert h_c % 2 == 0, "h_c must be divisible by 2."
         self.in_conv = nn.Sequential(
             RMSNormTranspose(1, in_c),
-            nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias),
-            nn.Conv2d(h_c, h_c, 3, 1, 1, bias=bias))
+            nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias))
         self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias)
         self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias)
         self.out_proj = nn.Sequential(
@@ -69,7 +68,7 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         x1, x2 = self.in_conv(x).chunk(2, dim=1)
-        # Depthwise separated Further 3x3 and dilated 3x3 paths
+        # Further 3x3 and dilated 3x3 paths
         x = torch.cat([self.path1(x1), self.path2(x2)], dim=1)
         x = self.out_proj(x)
         return x
@@ -223,7 +222,7 @@ if __name__ == "__main__":
         "in_channels": 3,
         "out_channels": 1000,
         "channels": [64, 128, 256, 512],
-        "convs": [64, 64, 64, 64],
+        "convs": [64, 64, 128, 128],
         "attns": [[256, 4], [256, 4], 8, 16],
         "mlps": [256, 512, 1024, 2048],
         "layers": [2, 2, 2, 2]
