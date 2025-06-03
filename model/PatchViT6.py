@@ -60,9 +60,9 @@ class ConvBlock(nn.Module):
         self.in_conv = nn.Sequential(
             RMSNormTranspose(1, in_c),
             nn.Conv2d(in_c, h_c, 1, 1, 0, bias=bias),
-            nn.Conv2d(h_c, h_c, 3, 1, 1, bias=bias, groups=h_c))
-        self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias, groups=h_c//2)
-        self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias, groups=h_c//2)
+            nn.Conv2d(h_c, h_c, 3, 1, 1, bias=bias))
+        self.path1 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 1, bias=bias)
+        self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias)
         self.out_proj = nn.Sequential(
             nn.SiLU(),
             nn.Conv2d(h_c, out_c, 1, 1, 0, bias=bias))
@@ -223,7 +223,7 @@ if __name__ == "__main__":
         "in_channels": 3,
         "out_channels": 1000,
         "channels": [64, 128, 256, 512],
-        "convs": [64, 128, 256, 512],
+        "convs": [64, 64, 64, 64],
         "attns": [[256, 4], [256, 4], 8, 16],
         "mlps": [256, 512, 1024, 2048],
         "layers": [2, 2, 2, 2]
