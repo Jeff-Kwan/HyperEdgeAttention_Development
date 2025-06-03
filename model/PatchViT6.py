@@ -14,13 +14,14 @@ class RMSNormTranspose(nn.Module):
 
 class HyperEdgeAttention(nn.Module):
     '''HyperEdge partitioning and attention.'''
-    def __init__(self, channels, edges, heads, bias=False):
+    def __init__(self, channels, edges, heads, bias=False, dropout=0.0):
         super(HyperEdgeAttention, self).__init__()
         assert channels%heads == 0, f"Channels {channels} not divisble by heads {heads}"
         self.edges = edges
         self.in_norm = RMSNormTranspose(1, channels)
         self.hyperedge = nn.Linear(channels, edges, bias=bias)
-        self.MHA = nn.MultiheadAttention(channels, heads, bias=bias, batch_first=True)
+        self.dropout = nn.Dropout(dropout)
+        self.MHA = nn.MultiheadAttention(channels, heads, bias=bias, batch_first=True, dropout=dropout)
         self.norm = nn.RMSNorm(channels)
         
 
@@ -33,6 +34,7 @@ class HyperEdgeAttention(nn.Module):
         # "Classify" which edge it belongs to & linear weighting
         weights = self.hyperedge(x)
         weights = F.relu(weights) * F.softmax(weights, dim=-1) * (self.edges/H/W)
+        weights = self.dropout(weights)
         z = self.norm(weights.transpose(1, 2) @ x)
 
         # Cross Attention with representative bins
@@ -41,10 +43,10 @@ class HyperEdgeAttention(nn.Module):
 
 
 class ReshapeSelfMHA(nn.Module):
-    def __init__(self, in_c, heads, bias=False):
+    def __init__(self, in_c, heads, bias=False, dropout=0.0):
         super(ReshapeSelfMHA, self).__init__()
         self.in_norm = nn.RMSNorm(in_c)
-        self.MHA = nn.MultiheadAttention(in_c, heads, bias=bias, batch_first=True)
+        self.MHA = nn.MultiheadAttention(in_c, heads, bias=bias, batch_first=True, dropout=dropout)
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -54,7 +56,7 @@ class ReshapeSelfMHA(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_c, h_c, out_c, bias=True):
+    def __init__(self, in_c, h_c, out_c, bias=True, dropout=0.0):
         super(ConvBlock, self).__init__()
         assert h_c % 2 == 0, "h_c must be divisible by 2."
         self.in_conv = nn.Sequential(
@@ -64,6 +66,7 @@ class ConvBlock(nn.Module):
         self.path2 = nn.Conv2d(h_c//2, h_c//2, 3, 1, 2, dilation=2, bias=bias)
         self.out_proj = nn.Sequential(
             nn.SiLU(),
+            nn.Dropout2d(dropout),
             nn.Conv2d(h_c, out_c, 1, 1, 0, bias=bias))
 
     def forward(self, x):
@@ -75,13 +78,15 @@ class ConvBlock(nn.Module):
     
 
 class SwiGLU(nn.Module):
-    def __init__(self, in_c, h_c, out_c, bias=True):
+    def __init__(self, in_c, h_c, out_c, bias=True, dropout=0.0):
         super(SwiGLU, self).__init__()
         self.conv1 = nn.Sequential(
             RMSNormTranspose(1, in_c),
             nn.Conv2d(in_c, h_c*2, 1, 1, 0, bias=bias))
         self.act = nn.SiLU()
-        self.conv2 = nn.Conv2d(h_c, out_c, 1, 1, 0, bias=bias)
+        self.conv2 = nn.Sequential(
+            nn.Dropout2d(dropout),
+            nn.Conv2d(h_c, out_c, 1, 1, 0, bias=bias))
 
     def forward(self, x):
         x1, x2 = self.conv1(x).chunk(2, dim=1)
@@ -89,14 +94,14 @@ class SwiGLU(nn.Module):
 
 
 class Layer(nn.Module):
-    def __init__(self, in_c, conv, attn, mlp, bias=False, HyperAttn=True):
+    def __init__(self, in_c, conv, attn, mlp, bias=False, HyperAttn=True, dropout=0.0):
         super(Layer, self).__init__()
-        self.ConvBlock = ConvBlock(in_c, conv, in_c, bias=bias)
+        self.ConvBlock = ConvBlock(in_c, conv, in_c, bias=bias, dropout=dropout)
         if HyperAttn:
-            self.Attention = HyperEdgeAttention(in_c, attn[0], attn[1], bias=bias)
+            self.Attention = HyperEdgeAttention(in_c, attn[0], attn[1], bias=bias, dropout=dropout)
         else:
-            self.Attention = ReshapeSelfMHA(in_c, attn, bias=bias)
-        self.SwiGLU = SwiGLU(in_c, mlp, in_c, bias=bias)
+            self.Attention = ReshapeSelfMHA(in_c, attn, bias=bias, dropout=dropout)
+        self.SwiGLU = SwiGLU(in_c, mlp, in_c, bias=bias, dropout=dropout)
 
 
     def forward(self, x):      
@@ -172,6 +177,7 @@ class PatchViT(nn.Module):
         attns = model_params['attns']
         mlps = model_params['mlps']
         layers = model_params['layers']
+        dropout = model_params.get('dropout', 0.0)
         assert len(channels) == len(layers), "Channels length must match Layers length"
         assert len(convs) == len(attns) == len(mlps) == len(layers), \
             "Convs, Attns, MLPs must match Layers length"
@@ -186,12 +192,13 @@ class PatchViT(nn.Module):
         self.layers = nn.ModuleList([
             nn.Sequential(*[
             Layer(channels[i], convs[i], attns[i], mlps[i], bias=False, 
-                  HyperAttn=isinstance(attns[i], list))
+                  HyperAttn=isinstance(attns[i], list), dropout=dropout)
             for _ in range(layers[i])
             ])
             for i in range(len(channels))
         ])
         self.out = nn.Sequential(
+            nn.Dropout2d(dropout),
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
             nn.RMSNorm(channels[-1], elementwise_affine=False),
@@ -225,7 +232,8 @@ if __name__ == "__main__":
         "convs": [64, 64, 64, 64],
         "attns": [[128, 4], [128, 4], 8, 16],
         "mlps": [256, 512, 1024, 2048],
-        "layers": [2, 2, 2, 2]
+        "layers": [2, 2, 2, 2],
+        "dropout": 0.2
     }
 
     # Create random input tensor representing an image batch

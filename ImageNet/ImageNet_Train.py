@@ -136,10 +136,10 @@ def main():
     epochs = 90
     batch_size = 512
     learning_rate = 2e-4
-    weight_decay = 1e-2
+    weight_decay = 2e-2
     label_smoothing = 0.1
-    cutmix = False
-    mixup = 0.5
+    cutmix = 0.5
+    mixup = False
     enable_compile = True
     compile_mode = 'max-autotune'
     autocast = True
@@ -185,9 +185,10 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
-        v2.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(3/4, 4/3)),
+        v2.RandomResizedCrop(img_size, scale=(0.6, 1.0), ratio=(3/4, 4/3)),
         v2.RandomHorizontalFlip(),
-        v2.RandAugment(),
+        v2.RandomAffine(degrees=15, translate=(0.1, 0.1), shear=10),
+        v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
         v2.ToDtype(torch.float32, scale=True),
