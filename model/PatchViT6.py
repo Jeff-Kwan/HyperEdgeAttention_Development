@@ -123,13 +123,15 @@ class CNNEmbedding(nn.Module):
         assert out_c % 4 == 0, "out_channels must be divisible by 4."
         self.channels = out_c
         self.downs = nn.ModuleList([
-            DownSample(in_c, out_c//4, 2),  # 1x1 -> 2x2
-            DownSample(out_c//4, out_c, 2), # 2x2 -> 4x4
+            nn.Conv2d(in_c, out_c//4, 2, 2, 0, bias=False),  # 1x1 -> 2x2
+            nn.Conv2d(out_c//4, out_c, 2, 2, 0, bias=False), # 2x2 -> 4x4
         ])
         self.convs = nn.ModuleList([
             ConvBlock(out_c//4, out_c//4, out_c//4, bias=False),  # 2x2
             ConvBlock(out_c, out_c, out_c, bias=False)            # 4x4
         ])
+        for down in self.downs:
+            nn.init.kaiming_normal_(down.weight, nonlinearity='linear')
 
         # Positional Embedding
         self.pos_embed = nn.Conv2d(out_c, out_c, 1, 1, 0, bias=False)
