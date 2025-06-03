@@ -40,13 +40,15 @@ class ImageNetDataset(Dataset):
         if cutmix:
             assert isinstance(cutmix, float), "cutmix should be a float"
             self.cutmix = True
-            self.apply_cutmix = v2.CutMix(alpha=cutmix, num_classes=1000)
+            self.cutmix_prob = cutmix
+            self.apply_cutmix = v2.CutMix(num_classes=1000)
         else:
             self.cutmix = False
         if mixup:
             assert isinstance(mixup, float), "mixup should be a float"
             self.mixup = True
-            self.apply_mixup = v2.MixUp(alpha=mixup, num_classes=1000)
+            self.mixup_prob = mixup
+            self.apply_mixup = v2.MixUp(num_classes=1000)
         else:
             self.mixup = False
 
@@ -64,12 +66,11 @@ class ImageNetDataset(Dataset):
         return image, label
     
     def collate_fn(self, batch):
-        if self.cutmix:
+        if self.cutmix and torch.rand(1).item() < self.cutmix_prob:
             return self.apply_cutmix(*default_collate(batch))
-        elif self.mixup:
+        elif self.mixup and torch.rand(1).item() < self.mixup_prob:
             return self.apply_mixup(*default_collate(batch))
-        else:
-            return default_collate(batch)
+        return default_collate(batch)
 
 # -----------------------------------------------------------------------------
 # Training and Evaluation Functions
@@ -137,7 +138,7 @@ def main():
     learning_rate = 1e-4
     weight_decay = 1e-2
     label_smoothing = 0.1
-    cutmix = 1.0
+    cutmix = 0.3
     mixup = False
     enable_compile = True
     compile_mode = 'max-autotune'
@@ -184,7 +185,8 @@ def main():
     
     # Define Transform Pipelines for Training and Validation
     train_transforms = v2.Compose([
-        v2.Resize(img_size),
+        v2.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(3/4, 4/3)),
+        v2.RandomHorizontalFlip(),
         v2.TrivialAugmentWide(),
         v2.CenterCrop(img_size),
         v2.ToImage(), 
