@@ -178,20 +178,11 @@ def main():
     # Ten-crop transforms: produce a tuple of ten PIL images and then stack into a 5D tensor
     tencrop_transforms = v2.Compose([
         v2.Resize(int(img_size*1.1)),                                  
-        v2.TenCrop(img_size),      # returns a tuple of 10 PIL Images :contentReference[oaicite:8]{index=8}  
-        v2.Lambda(lambda crops: 
-            torch.stack([
-                v2.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225]
-                )(
-                    v2.ToDtype(torch.float32, scale=True)(
-                        v2.ToImage()(crop)
-                    )
-                ) 
-                for crop in crops
-            ])
-        ),  # returns a tensor of shape [10, 3, H, W] :contentReference[oaicite:9]{index=9}  
+        v2.TenCrop(img_size),
+        v2.ToImage(),                                         
+        v2.ToDtype(torch.float32, scale=True),                
+        v2.Normalize(mean=[0.485, 0.456, 0.406],               
+                     std=[0.229, 0.224, 0.225]),     
     ])
 
     # --------------------------------------------------------------------------------
