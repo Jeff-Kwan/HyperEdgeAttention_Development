@@ -46,15 +46,15 @@ class ImageNetDataset(Dataset):
 
 
 # -----------------------------------------------------------------------------
-# Evaluation Function (Top-1 Accuracy)
+# One-Crop Evaluation Function (Top-1 Accuracy)
 # -----------------------------------------------------------------------------
-def evaluate_top1(model, device, test_loader, autocast):
+def evaluate_top1_onecrop(model, device, test_loader):
     model.eval()
     total_samples = 0
     correct_top1 = 0
 
     with torch.no_grad():
-        for data, target in tqdm(test_loader, desc="Testing"):
+        for data, target in tqdm(test_loader, desc="One-Crop Testing"):
             data = data.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             data = data.contiguous(memory_format=torch.channels_last)
@@ -69,7 +69,39 @@ def evaluate_top1(model, device, test_loader, autocast):
             correct_top1 += pred.eq(target).sum().item()
 
     top1_accuracy = 100.0 * correct_top1 / total_samples if total_samples > 0 else 0.0
-    print(f'Test set: Top-1 Accuracy: {correct_top1}/{total_samples} ({top1_accuracy:.2f}%)')
+    print(f'One-Crop Test: Top-1 Accuracy: {correct_top1}/{total_samples} ({top1_accuracy:.2f}%)')
+    return top1_accuracy
+
+
+# -----------------------------------------------------------------------------
+# Ten-Crop Evaluation Function (Top-1 Accuracy)
+# -----------------------------------------------------------------------------
+def evaluate_top1_tencrop(model, device, test_loader):
+    model.eval()
+    total_samples = 0
+    correct_top1 = 0
+
+    with torch.no_grad():
+        for data, target in tqdm(test_loader, desc="Ten-Crop Testing"):
+            # data shape: [B, 10, 3, H, W]
+            bs, ncrops, c, h, w = data.size()
+            data = data.view(bs * ncrops, c, h, w).to(device, non_blocking=True)
+            target = target.to(device, non_blocking=True)
+            data = data.contiguous(memory_format=torch.channels_last)
+
+            # Run all crops through the model
+            outputs = model(data)  # shape: [B * 10, num_classes]
+
+            # Reshape and average logits across crops
+            outputs = outputs.view(bs, ncrops, -1)  # shape: [B, 10, num_classes]
+            outputs_avg = outputs.mean(dim=1)       # shape: [B, num_classes]
+
+            total_samples += bs
+            pred = outputs_avg.argmax(dim=-1)       # shape: [B]
+            correct_top1 += pred.eq(target).sum().item()
+
+    top1_accuracy = 100.0 * correct_top1 / total_samples if total_samples > 0 else 0.0
+    print(f'Ten-Crop Test: Top-1 Accuracy: {correct_top1}/{total_samples} ({top1_accuracy:.2f}%)')
     return top1_accuracy
 
 
@@ -84,18 +116,16 @@ def main():
     config_path = os.path.join('model', 'configs', 'PViT7_ImageNet.json')
 
     # Path to the trained checkpoint (.tar or .pth) produced by the training script
-    checkpoint_path = os.path.join('output', '2025-06-03', '07-10-PViT-ImageNet', 'ImageNet_PViT.tar')
+    checkpoint_path = os.path.join('output', '2025-06-03', '16-01-PViT-ImageNet', 'ImageNet_PViT.tar')
 
     # Directory to cache/download ImageNet data
     hf_cache_dir = os.path.join('data', 'hf_cache')
     imagenet_data_dir = os.path.join('data', 'imagenet')
 
     # Batch size for testing
-    batch_size = 128
-    img_size = 224
-    autocast = False
+    batch_size = 64
+    img_size = 256
     cpu_workers = 32
-    
 
     # --------------------------------------------------------------------------------
     # Device configuration
@@ -122,7 +152,6 @@ def main():
         raise FileNotFoundError(f"Could not find checkpoint at: {checkpoint_path}")
 
     print(f'Loading checkpoint from: {checkpoint_path}')
-    state_dict = torch.load(checkpoint_path, map_location=device)
     raw = torch.load(checkpoint_path, map_location=device)
     state_dict = raw.get('state_dict', raw)
     # Strip the "_orig_mod." prefix from any key that has it
@@ -134,27 +163,46 @@ def main():
     print("Checkpoint loaded successfully.")
 
     # --------------------------------------------------------------------------------
-    # Define transforms (same as validation transforms used during training)
+    # Define transforms
     # --------------------------------------------------------------------------------
-    val_transforms = v2.Compose([
-        v2.Resize(img_size),
-        v2.CenterCrop(img_size),
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=[0.485, 0.456, 0.406],
-                     std=[0.229, 0.224, 0.225]),
+    # One-shot (center-crop) transforms
+    onecrop_transforms = v2.Compose([
+        v2.Resize(img_size),                                  
+        v2.CenterCrop(img_size),                              
+        v2.ToImage(),                                         
+        v2.ToDtype(torch.float32, scale=True),                
+        v2.Normalize(mean=[0.485, 0.456, 0.406],               
+                     std=[0.229, 0.224, 0.225]),              
+    ])
+
+    # Ten-crop transforms: produce a tuple of ten PIL images and then stack into a 5D tensor
+    tencrop_transforms = v2.Compose([
+        v2.Resize(int(img_size*1.1)),                                  
+        v2.TenCrop(img_size),      # returns a tuple of 10 PIL Images :contentReference[oaicite:8]{index=8}  
+        v2.Lambda(lambda crops: 
+            torch.stack([
+                v2.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]
+                )(
+                    v2.ToDtype(torch.float32, scale=True)(
+                        v2.ToImage()(crop)
+                    )
+                ) 
+                for crop in crops
+            ])
+        ),  # returns a tensor of shape [10, 3, H, W] :contentReference[oaicite:9]{index=9}  
     ])
 
     # --------------------------------------------------------------------------------
-    # Load ImageNet1k "test" split
-    # Note: If the "test" split is not available, fallback to the "validation" split.
+    # Load ImageNet1k "validation" split
     # --------------------------------------------------------------------------------
     os.makedirs(hf_cache_dir, exist_ok=True)
     os.makedirs(imagenet_data_dir, exist_ok=True)
 
     test_dataset_raw = load_dataset(
         'ILSVRC/imagenet-1k',
-        split='validation', # test labels are all -1
+        split='validation',  # test labels are all -1, so use "validation"
         trust_remote_code=True,
         streaming=False,
         data_dir=imagenet_data_dir,
@@ -165,15 +213,38 @@ def main():
     # --------------------------------------------------------------------------------
     # Wrap raw dataset with our custom ImageNetDataset and transforms
     # --------------------------------------------------------------------------------
-    test_dataset = ImageNetDataset(
+    test_dataset_onecrop = ImageNetDataset(
         dataset=test_dataset_raw,
         device=device,
-        transform=val_transforms,
+        transform=onecrop_transforms,
         max_size=img_size
     )
+    test_loader_onecrop = DataLoader(
+        test_dataset_onecrop,
+        batch_size=batch_size,
+        num_workers=cpu_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2,
+    )
 
-    test_loader = DataLoader(
-        test_dataset,
+    # For ten-crop, we need to reload the dataset object, since transforms cannot be changed in place
+    test_dataset_raw_tencrop = load_dataset(
+        'ILSVRC/imagenet-1k',
+        split='validation',
+        trust_remote_code=True,
+        streaming=False,
+        data_dir=imagenet_data_dir,
+        cache_dir=hf_cache_dir
+    )
+    test_dataset_tencrop = ImageNetDataset(
+        dataset=test_dataset_raw_tencrop,
+        device=device,
+        transform=tencrop_transforms,
+        max_size=img_size
+    )
+    test_loader_tencrop = DataLoader(
+        test_dataset_tencrop,
         batch_size=batch_size,
         num_workers=cpu_workers,
         pin_memory=True,
@@ -182,12 +253,18 @@ def main():
     )
 
     # --------------------------------------------------------------------------------
-    # Run evaluation to compute Top-1 accuracy
+    # Run evaluation to compute both Top-1 accuracies
     # --------------------------------------------------------------------------------
-    top1_acc = evaluate_top1(model, device, test_loader, autocast)
+    print("Starting one-shot (center-crop) evaluation...")
+    top1_onecrop = evaluate_top1_onecrop(model, device, test_loader_onecrop)
+    print(f'One-Shot Top-1 Accuracy: {top1_onecrop:.2f}%')
+
+    print("Starting ten-crop evaluation...")
+    top1_tencrop = evaluate_top1_tencrop(model, device, test_loader_tencrop)
+    print(f'Ten-Crop Top-1 Accuracy: {top1_tencrop:.2f}%')
 
     # Optionally: save results to a JSON or print more details
-    print(f'Finished testing. Top-1 Accuracy: {top1_acc:.2f}%')
+    print(f'Finished testing.\nOne-Shot Top-1 Accuracy: {top1_onecrop:.2f}%\nTen-Crop Top-1 Accuracy: {top1_tencrop:.2f}%')
 
 
 if __name__ == '__main__':
