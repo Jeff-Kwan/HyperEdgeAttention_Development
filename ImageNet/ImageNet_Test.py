@@ -42,6 +42,9 @@ class ImageNetDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
+        if type(image) == tuple:
+            image = torch.stack(image, dim=0)
+
         return image, label
 
 
@@ -178,11 +181,11 @@ def main():
     # Ten-crop transforms: produce a tuple of ten PIL images and then stack into a 5D tensor
     tencrop_transforms = v2.Compose([
         v2.Resize(int(img_size*1.1)),                                  
-        v2.TenCrop(img_size),
         v2.ToImage(),                                         
         v2.ToDtype(torch.float32, scale=True),                
         v2.Normalize(mean=[0.485, 0.456, 0.406],               
                      std=[0.229, 0.224, 0.225]),     
+        v2.TenCrop(img_size),
     ])
 
     # --------------------------------------------------------------------------------
